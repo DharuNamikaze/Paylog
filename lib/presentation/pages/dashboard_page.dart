@@ -233,8 +233,10 @@ class _DashboardPageState extends State<DashboardPage> {
 
   /// Build SMS service controls and status
   Widget _buildSmsServiceControls() {
-    return BlocBuilder<SmsBloc, SmsState>(
-      builder: (context, smsState) {
+    // Check if SmsBloc is available
+    try {
+      return BlocBuilder<SmsBloc, SmsState>(
+        builder: (context, smsState) {
         return Container(
           margin: const EdgeInsets.all(16.0),
           child: Card(
@@ -277,6 +279,58 @@ class _DashboardPageState extends State<DashboardPage> {
         );
       },
     );
+    } catch (e) {
+      // SmsBloc is not available, show a message
+      return Container(
+        margin: const EdgeInsets.all(16.0),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.sms_failed,
+                      color: Colors.orange,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'SMS Monitoring Unavailable',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Colors.orange,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'SMS monitoring service is not available. You can still add transactions manually using the button below.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   /// Build service status indicator
@@ -372,7 +426,11 @@ class _DashboardPageState extends State<DashboardPage> {
         if (state is SmsListening) ...[
           ElevatedButton.icon(
             onPressed: () {
-              context.read<SmsBloc>().add(StopSmsListening());
+              try {
+                context.read<SmsBloc>().add(StopSmsListening());
+              } catch (e) {
+                // SmsBloc not available
+              }
             },
             icon: const Icon(Icons.stop),
             label: const Text('Stop Monitoring'),
@@ -384,7 +442,11 @@ class _DashboardPageState extends State<DashboardPage> {
         ] else if (state is SmsPermissionDenied) ...[
           ElevatedButton.icon(
             onPressed: () {
-              context.read<SmsBloc>().add(RequestSmsPermissions());
+              try {
+                context.read<SmsBloc>().add(RequestSmsPermissions());
+              } catch (e) {
+                // SmsBloc not available
+              }
             },
             icon: const Icon(Icons.security),
             label: const Text('Grant Permissions'),
@@ -403,7 +465,11 @@ class _DashboardPageState extends State<DashboardPage> {
         ] else if (state is SmsError) ...[
           ElevatedButton.icon(
             onPressed: () {
-              context.read<SmsBloc>().add(StartSmsListening());
+              try {
+                context.read<SmsBloc>().add(StartSmsListening());
+              } catch (e) {
+                // SmsBloc not available
+              }
             },
             icon: const Icon(Icons.refresh),
             label: const Text('Retry'),
@@ -418,7 +484,11 @@ class _DashboardPageState extends State<DashboardPage> {
         ] else ...[
           ElevatedButton.icon(
             onPressed: () {
-              context.read<SmsBloc>().add(StartSmsListening());
+              try {
+                context.read<SmsBloc>().add(StartSmsListening());
+              } catch (e) {
+                // SmsBloc not available
+              }
             },
             icon: const Icon(Icons.play_arrow),
             label: const Text('Start Monitoring'),
@@ -484,7 +554,11 @@ class _DashboardPageState extends State<DashboardPage> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
-              context.read<SmsBloc>().add(RequestSmsPermissions());
+              try {
+                context.read<SmsBloc>().add(RequestSmsPermissions());
+              } catch (e) {
+                // SmsBloc not available
+              }
             },
             child: const Text('Grant Permissions'),
           ),
@@ -541,7 +615,11 @@ class _DashboardPageState extends State<DashboardPage> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
-              context.read<SmsBloc>().add(StartSmsListening());
+              try {
+                context.read<SmsBloc>().add(StartSmsListening());
+              } catch (e) {
+                // SmsBloc not available
+              }
             },
             child: const Text('Retry'),
           ),

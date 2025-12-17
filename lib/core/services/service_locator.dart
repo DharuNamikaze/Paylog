@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../data/datasources/sms_platform_channel.dart';
 import '../../data/datasources/local_storage_datasource.dart';
@@ -104,7 +105,7 @@ class ServiceLocator {
     // Transaction Repository
     _services[TransactionRepository] = TransactionRepositoryImpl(
       firestore: FirebaseFirestore.instance,
-      uuid: get<Uuid>(),
+      uuid: _services[Uuid] as Uuid,
     );
   }
 
@@ -121,8 +122,8 @@ class ServiceLocator {
     
     // Offline Queue Sync
     _services[SyncOfflineQueue] = SyncOfflineQueue(
-      localStorage: get<LocalStorageDataSource>(),
-      repository: get<TransactionRepository>() as TransactionRepositoryImpl,
+      localStorage: _services[LocalStorageDataSource] as LocalStorageDataSource,
+      repository: _services[TransactionRepository] as TransactionRepositoryImpl,
     );
     
     // Duplicate Detector
@@ -157,13 +158,13 @@ class ServiceLocator {
   Future<void> _initializeApplicationServices() async {
     // SMS Listener Service
     final smsListenerService = SmsListenerService(
-      smsChannel: get<SmsPlatformChannel>(),
-      financialDetector: get<FinancialContextDetector>(),
-      smsParser: get<ParseSmsTransaction>(),
-      validator: get<ValidateTransaction>(),
-      repository: get<TransactionRepository>(),
-      duplicateDetector: get<DuplicateDetector>(),
-      uuid: get<Uuid>(),
+      smsChannel: _services[SmsPlatformChannel] as SmsPlatformChannel,
+      financialDetector: _services[FinancialContextDetector] as FinancialContextDetector,
+      smsParser: _services[ParseSmsTransaction] as ParseSmsTransaction,
+      validator: _services[ValidateTransaction] as ValidateTransaction,
+      repository: _services[TransactionRepository] as TransactionRepository,
+      duplicateDetector: _services[DuplicateDetector] as DuplicateDetector,
+      uuid: _services[Uuid] as Uuid,
     );
     
     // Initialize the SMS listener service
@@ -189,28 +190,35 @@ class ServiceLocator {
   void _initializeRepositoriesWithoutFirebase() {
     // Create a mock transaction repository that uses local storage only
     _services[TransactionRepository] = LocalTransactionRepository(
-      localStorage: get<LocalStorageDataSource>(),
-      uuid: get<Uuid>(),
+      localStorage: _services[LocalStorageDataSource] as LocalStorageDataSource,
+      uuid: _services[Uuid] as Uuid,
     );
   }
 
   /// Initialize application services without Firebase
   Future<void> _initializeApplicationServicesWithoutFirebase() async {
-    // SMS Listener Service (without Firebase repository)
-    final smsListenerService = SmsListenerService(
-      smsChannel: get<SmsPlatformChannel>(),
-      financialDetector: get<FinancialContextDetector>(),
-      smsParser: get<ParseSmsTransaction>(),
-      validator: get<ValidateTransaction>(),
-      repository: get<TransactionRepository>(),
-      duplicateDetector: get<DuplicateDetector>(),
-      uuid: get<Uuid>(),
-    );
-    
-    // Initialize the SMS listener service
-    await smsListenerService.initialize();
-    
-    _services[SmsListenerService] = smsListenerService;
+    // Create SMS Listener Service with local repository
+    try {
+      final smsListenerService = SmsListenerService(
+        smsChannel: _services[SmsPlatformChannel] as SmsPlatformChannel,
+        financialDetector: _services[FinancialContextDetector] as FinancialContextDetector,
+        smsParser: _services[ParseSmsTransaction] as ParseSmsTransaction,
+        validator: _services[ValidateTransaction] as ValidateTransaction,
+        repository: _services[TransactionRepository] as TransactionRepository,
+        duplicateDetector: _services[DuplicateDetector] as DuplicateDetector,
+        uuid: _services[Uuid] as Uuid,
+      );
+      
+      // Initialize the SMS listener service
+      await smsListenerService.initialize();
+      
+      _services[SmsListenerService] = smsListenerService;
+      debugPrint('✅ SMS Listener Service initialized successfully (local mode)');
+    } catch (e) {
+      debugPrint('⚠️ Failed to initialize SMS Listener Service: $e');
+      // Don't set to null, just don't register it
+      debugPrint('⚠️ SMS functionality will be limited');
+    }
   }
 
   /// Get a service instance by type
@@ -231,14 +239,22 @@ class ServiceLocator {
   /// 
   /// BLoCs are created fresh each time to avoid state issues
   SmsBloc createSmsBloc() {
+    final smsService = _services[SmsListenerService];
+    if (smsService == null) {
+      throw StateError('SmsListenerService is not available. Check service initialization.');
+    }
     return SmsBloc(
-      smsListenerService: get<SmsListenerService>(),
+      smsListenerService: smsService as SmsListenerService,
     );
   }
 
   TransactionBloc createTransactionBloc() {
+    final repository = _services[TransactionRepository];
+    if (repository == null) {
+      throw StateError('TransactionRepository is not available. Check service initialization.');
+    }
     return TransactionBloc(
-      transactionRepository: get<TransactionRepository>(),
+      transactionRepository: repository as TransactionRepository,
     );
   }
 

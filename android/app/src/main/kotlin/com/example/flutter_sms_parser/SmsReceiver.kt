@@ -1,4 +1,4 @@
-package com.example.flutter_sms_parser
+package com.paylog.app
 
 import android.content.BroadcastReceiver
 import android.content.Context

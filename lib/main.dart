@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -15,21 +16,53 @@ void main() async {
   bool servicesInitialized = false;
   
   try {
-    // Skip Firebase for now - we'll add it later when properly configured
-    debugPrint('⚠️ Firebase initialization skipped - not configured yet');
+    // Initialize Firebase
+    debugPrint('🔄 Initializing Firebase...');
+    await Firebase.initializeApp();
+    debugPrint('✅ Firebase initialized successfully');
     
     // Initialize Hive
     await Hive.initFlutter();
     debugPrint('✅ Hive initialized successfully');
     
-    // Initialize service locator and all dependencies (without Firebase)
-    await serviceLocator.initializeWithoutFirebase();
-    debugPrint('✅ Service locator initialized successfully (without Firebase)');
+    // Ensure clean state
+    debugPrint('🔄 Resetting service locator...');
+    await serviceLocator.reset();
+    debugPrint('✅ Service locator reset complete');
+    
+    // Initialize service locator and all dependencies (with Firebase)
+    debugPrint('🔄 Starting service locator initialization...');
+    await serviceLocator.initialize();
+    debugPrint('✅ Service locator initialized successfully (with Firebase)');
     
     servicesInitialized = true;
-  } catch (e) {
-    debugPrint('❌ Service initialization failed: $e');
-    servicesInitialized = false;
+  } catch (e, stackTrace) {
+    debugPrint('❌ Firebase initialization failed: $e');
+    debugPrint('Stack trace: $stackTrace');
+    
+    // Fallback to local-only mode
+    try {
+      debugPrint('🔄 Falling back to local-only mode...');
+      
+      // Initialize Hive
+      await Hive.initFlutter();
+      debugPrint('✅ Hive initialized successfully');
+      
+      // Ensure clean state
+      debugPrint('🔄 Resetting service locator...');
+      await serviceLocator.reset();
+      debugPrint('✅ Service locator reset complete');
+      
+      // Initialize service locator without Firebase
+      debugPrint('🔄 Starting service locator initialization (local-only)...');
+      await serviceLocator.initializeWithoutFirebase();
+      debugPrint('✅ Service locator initialized successfully (local-only mode)');
+      
+      servicesInitialized = true;
+    } catch (fallbackError) {
+      debugPrint('❌ Fallback initialization also failed: $fallbackError');
+      servicesInitialized = false;
+    }
   }
   
   runApp(MyApp(servicesInitialized: servicesInitialized));
@@ -56,17 +89,35 @@ class MyApp extends StatelessWidget {
     }
 
     // Full app with all services
-    return MultiBlocProvider(
-      providers: [
-        // SMS BLoC for managing SMS listening state
-        BlocProvider<SmsBloc>(
-          create: (context) => serviceLocator.createSmsBloc(),
-        ),
-        // Transaction BLoC for managing transaction data
+    final providers = <BlocProvider>[];
+    
+    // Try to create Transaction BLoC (should always work)
+    try {
+      providers.add(
         BlocProvider<TransactionBloc>(
           create: (context) => serviceLocator.createTransactionBloc(),
         ),
-      ],
+      );
+      debugPrint('✅ TransactionBloc created successfully');
+    } catch (e) {
+      debugPrint('❌ Failed to create TransactionBloc: $e');
+    }
+    
+    // Try to create SMS BLoC (might fail if SMS service is not available)
+    try {
+      providers.add(
+        BlocProvider<SmsBloc>(
+          create: (context) => serviceLocator.createSmsBloc(),
+        ),
+      );
+      debugPrint('✅ SmsBloc created successfully');
+    } catch (e) {
+      debugPrint('⚠️ Failed to create SmsBloc: $e');
+      debugPrint('⚠️ SMS functionality will be limited');
+    }
+
+    return MultiBlocProvider(
+      providers: providers,
       child: MaterialApp(
         title: 'SMS Transaction Parser',
         theme: ThemeData(

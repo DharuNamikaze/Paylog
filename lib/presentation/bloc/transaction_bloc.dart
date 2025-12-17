@@ -30,6 +30,23 @@ class RefreshTransactions extends TransactionEvent {
   RefreshTransactions(this.userId);
 }
 
+// Internal events for stream updates
+class _TransactionStreamUpdate extends TransactionEvent {
+  final List<Transaction> transactions;
+
+  _TransactionStreamUpdate(this.transactions);
+}
+
+class _TransactionStreamError extends TransactionEvent {
+  final String error;
+  final List<Transaction>? cachedTransactions;
+
+  _TransactionStreamError({
+    required this.error,
+    this.cachedTransactions,
+  });
+}
+
 // States
 abstract class TransactionState {}
 
@@ -81,6 +98,8 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
     on<AddTransaction>(_onAddTransaction);
     on<DeleteTransaction>(_onDeleteTransaction);
     on<RefreshTransactions>(_onRefreshTransactions);
+    on<_TransactionStreamUpdate>(_onTransactionStreamUpdate);
+    on<_TransactionStreamError>(_onTransactionStreamError);
   }
 
   Future<void> _onLoadTransactions(
@@ -107,8 +126,9 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
                   return b.time.compareTo(a.time);
                 });
 
+              // Use add instead of emit to avoid the completion issue
               if (!isClosed) {
-                emit(TransactionLoaded(transactions: sortedTransactions));
+                add(_TransactionStreamUpdate(sortedTransactions));
               }
             },
             onError: (error) {
@@ -116,7 +136,7 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
                 final currentTransactions = state is TransactionLoaded
                     ? (state as TransactionLoaded).transactions
                     : null;
-                emit(TransactionError(
+                add(_TransactionStreamError(
                   error: 'Failed to load transactions: ${error.toString()}',
                   cachedTransactions: currentTransactions,
                 ));
@@ -194,6 +214,23 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
         cachedTransactions: currentTransactions,
       ));
     }
+  }
+
+  Future<void> _onTransactionStreamUpdate(
+    _TransactionStreamUpdate event,
+    Emitter<TransactionState> emit,
+  ) async {
+    emit(TransactionLoaded(transactions: event.transactions));
+  }
+
+  Future<void> _onTransactionStreamError(
+    _TransactionStreamError event,
+    Emitter<TransactionState> emit,
+  ) async {
+    emit(TransactionError(
+      error: event.error,
+      cachedTransactions: event.cachedTransactions,
+    ));
   }
 
   @override

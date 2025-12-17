@@ -1,4 +1,4 @@
-package com.example.flutter_sms_parser
+package com.paylog.app
 
 import android.Manifest
 import android.app.Activity
