@@ -1,0 +1,15 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:flutter_sms_parser/main.dart';
+
+void main() {
+  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+    // Build our app and trigger a frame.
+    await tester.pumpWidget(const MyApp());
+
+    // Verify that our app starts with the correct title.
+    expect(find.text('SMS Transaction Parser'), findsOneWidget);
+    expect(find.text('Ready to monitor SMS messages for financial transactions.'), findsOneWidget);
+  });
+}
