@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_sms_parser/presentation/pages/dashboard_page.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction_type.dart';
+import 'package:paylog/presentation/pages/dashboard_page.dart';
+import 'package:paylog/domain/entities/transaction.dart';
+import 'package:paylog/domain/entities/transaction_type.dart';
 
 void main() {
   group('TransactionCard Widget Tests', () {

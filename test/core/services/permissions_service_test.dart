@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_sms_parser/core/services/permissions_service.dart';
+import 'package:paylog/core/services/permissions_service.dart';
 import 'dart:io';
 
 void main() {

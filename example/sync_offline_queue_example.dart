@@ -1,8 +1,8 @@
-import 'package:flutter_sms_parser/data/datasources/local_storage_datasource.dart';
-import 'package:flutter_sms_parser/data/repositories/transaction_repository_impl.dart';
-import 'package:flutter_sms_parser/domain/usecases/sync_offline_queue.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction_type.dart';
+import 'package:paylog/data/datasources/local_storage_datasource.dart';
+import 'package:paylog/data/repositories/transaction_repository_impl.dart';
+import 'package:paylog/domain/usecases/sync_offline_queue.dart';
+import 'package:paylog/domain/entities/transaction.dart';
+import 'package:paylog/domain/entities/transaction_type.dart';
 
 /// Example demonstrating the Offline Queue Sync Service
 /// 

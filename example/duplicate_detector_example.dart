@@ -1,5 +1,5 @@
-import 'package:flutter_sms_parser/core/utils/duplicate_detector.dart';
-import 'package:flutter_sms_parser/domain/entities/sms_message.dart';
+import 'package:paylog/core/utils/duplicate_detector.dart';
+import 'package:paylog/domain/entities/sms_message.dart';
 
 /// Example usage of DuplicateDetector
 /// 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/presentation/pages/manual_input_page.dart';
+import 'package:paylog/presentation/pages/manual_input_page.dart';
 
 void main() {
   group('ManualInputPage', () {

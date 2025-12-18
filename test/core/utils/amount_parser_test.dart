@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/core/utils/amount_parser.dart';
+import 'package:paylog/core/utils/amount_parser.dart';
 
 void main() {
   group('AmountParser', () {

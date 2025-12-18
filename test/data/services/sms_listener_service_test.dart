@@ -1,15 +1,15 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/data/services/sms_listener_service.dart';
-import 'package:flutter_sms_parser/domain/entities/sms_message.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction_type.dart';
-import 'package:flutter_sms_parser/domain/entities/validation_result.dart';
-import 'package:flutter_sms_parser/domain/usecases/detect_financial_context.dart';
-import 'package:flutter_sms_parser/domain/usecases/parse_sms_transaction.dart';
-import 'package:flutter_sms_parser/domain/usecases/validate_transaction.dart';
-import 'package:flutter_sms_parser/domain/repositories/transaction_repository.dart';
-import 'package:flutter_sms_parser/core/utils/duplicate_detector.dart';
+import 'package:paylog/data/services/sms_listener_service.dart';
+import 'package:paylog/domain/entities/sms_message.dart';
+import 'package:paylog/domain/entities/transaction.dart';
+import 'package:paylog/domain/entities/transaction_type.dart';
+import 'package:paylog/domain/entities/validation_result.dart';
+import 'package:paylog/domain/usecases/detect_financial_context.dart';
+import 'package:paylog/domain/usecases/parse_sms_transaction.dart';
+import 'package:paylog/domain/usecases/validate_transaction.dart';
+import 'package:paylog/domain/repositories/transaction_repository.dart';
+import 'package:paylog/core/utils/duplicate_detector.dart';
 
 /// Mock transaction repository for testing
 class MockTransactionRepository implements TransactionRepository {

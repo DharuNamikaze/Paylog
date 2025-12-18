@@ -1,4 +1,4 @@
-import 'package:flutter_sms_parser/core/services/permissions_service.dart';
+import 'package:paylog/core/services/permissions_service.dart';
 
 /// Example demonstrating how to use the PermissionsService
 void main() async {

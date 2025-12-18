@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
-import 'package:flutter_sms_parser/domain/entities/sms_message.dart';
+import 'package:paylog/domain/entities/sms_message.dart';
 
 /// Detects duplicate SMS messages using hash-based storage
 /// 

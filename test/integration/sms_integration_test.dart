@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/data/datasources/sms_platform_channel.dart';
+import 'package:paylog/data/datasources/sms_platform_channel.dart';
 
 void main() {
   group('SMS Platform Channel Integration', () {

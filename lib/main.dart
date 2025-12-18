@@ -78,9 +78,9 @@ class MyApp extends StatelessWidget {
     if (!servicesInitialized) {
       // Fallback to simple app if services failed to initialize
       return MaterialApp(
-        title: 'SMS Transaction Parser',
+        title: 'PayLog',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
           useMaterial3: true,
         ),
         home: const ServiceErrorPage(),
@@ -119,9 +119,9 @@ class MyApp extends StatelessWidget {
     return MultiBlocProvider(
       providers: providers,
       child: MaterialApp(
-        title: 'SMS Transaction Parser',
+        title: 'PayLog',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
           useMaterial3: true,
         ),
         // Set up routing
@@ -140,7 +140,7 @@ class ServiceErrorPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SMS Transaction Parser'),
+        title: const Text('PayLog'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Center(

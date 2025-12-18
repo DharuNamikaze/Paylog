@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/core/utils/transaction_type_classifier.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction_type.dart';
+import 'package:paylog/core/utils/transaction_type_classifier.dart';
+import 'package:paylog/domain/entities/transaction_type.dart';
 
 void main() {
   group('TransactionTypeClassifier', () {

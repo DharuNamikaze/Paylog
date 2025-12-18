@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/core/utils/duplicate_detector.dart';
-import 'package:flutter_sms_parser/domain/entities/sms_message.dart';
+import 'package:paylog/core/utils/duplicate_detector.dart';
+import 'package:paylog/domain/entities/sms_message.dart';
 import 'package:hive/hive.dart';
 
 void main() {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/domain/usecases/detect_financial_context.dart';
+import 'package:paylog/domain/usecases/detect_financial_context.dart';
 
 void main() {
   group('FinancialContextDetector Tests', () {

@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
-import 'package:flutter_sms_parser/data/datasources/local_storage_datasource.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction_type.dart';
+import 'package:paylog/data/datasources/local_storage_datasource.dart';
+import 'package:paylog/domain/entities/transaction.dart';
+import 'package:paylog/domain/entities/transaction_type.dart';
 
 void main() {
   late LocalStorageDataSource dataSource;

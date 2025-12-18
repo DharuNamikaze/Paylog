@@ -2,10 +2,16 @@ package com.paylog.app
 
 import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -90,6 +96,11 @@ class SmsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.S
                 "testReceiverRegistration" -> testReceiverRegistration(result)
                 "testPlatformChannelConnectivity" -> testPlatformChannelConnectivity(result)
                 "simulateSmsReceived" -> simulateSmsReceived(call, result)
+                "startBackgroundService" -> startBackgroundService(result)
+                "stopBackgroundService" -> stopBackgroundService(result)
+                "isBackgroundServiceRunning" -> isBackgroundServiceRunning(result)
+                "requestBatteryOptimizationExemption" -> requestBatteryOptimizationExemption(result)
+                "isBatteryOptimizationIgnored" -> isBatteryOptimizationIgnored(result)
                 else -> {
                     Log.w(TAG, "Unknown method call: ${call.method}")
                     result.notImplemented()
@@ -477,6 +488,135 @@ class SmsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.S
         } catch (e: Exception) {
             Log.e(TAG, "Error simulating SMS received: ${e.message}", e)
             result.error("SMS_SIMULATION_ERROR", "Error simulating SMS received: ${e.message}", e.toString())
+        }
+    }
+    
+    private fun startBackgroundService(result: MethodChannel.Result) {
+        try {
+            Log.d(TAG, "Starting background SMS monitoring service")
+            val context = this.context
+            if (context == null) {
+                Log.e(TAG, "Context not available for starting background service")
+                result.error("NO_CONTEXT", "Context not available for starting background service", null)
+                return
+            }
+            
+            val serviceIntent = Intent(context, SmsMonitoringService::class.java)
+            serviceIntent.action = SmsMonitoringService.ACTION_START_MONITORING
+            
+            context.startForegroundService(serviceIntent)
+            
+            Log.d(TAG, "Background SMS monitoring service started")
+            result.success(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting background service: ${e.message}", e)
+            result.error("BACKGROUND_SERVICE_ERROR", "Error starting background service: ${e.message}", e.toString())
+        }
+    }
+    
+    private fun stopBackgroundService(result: MethodChannel.Result) {
+        try {
+            Log.d(TAG, "Stopping background SMS monitoring service")
+            val context = this.context
+            if (context == null) {
+                Log.e(TAG, "Context not available for stopping background service")
+                result.error("NO_CONTEXT", "Context not available for stopping background service", null)
+                return
+            }
+            
+            val serviceIntent = Intent(context, SmsMonitoringService::class.java)
+            serviceIntent.action = SmsMonitoringService.ACTION_STOP_MONITORING
+            
+            context.startService(serviceIntent)
+            
+            Log.d(TAG, "Background SMS monitoring service stopped")
+            result.success(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping background service: ${e.message}", e)
+            result.error("BACKGROUND_SERVICE_ERROR", "Error stopping background service: ${e.message}", e.toString())
+        }
+    }
+    
+    private fun isBackgroundServiceRunning(result: MethodChannel.Result) {
+        try {
+            val context = this.context
+            if (context == null) {
+                result.error("NO_CONTEXT", "Context not available", null)
+                return
+            }
+            
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val runningServices = activityManager.getRunningServices(Integer.MAX_VALUE)
+            
+            val isRunning = runningServices.any { service ->
+                service.service.className == SmsMonitoringService::class.java.name
+            }
+            
+            Log.d(TAG, "Background service running: $isRunning")
+            result.success(isRunning)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking background service status: ${e.message}", e)
+            result.error("SERVICE_CHECK_ERROR", "Error checking background service status: ${e.message}", e.toString())
+        }
+    }
+    
+    private fun requestBatteryOptimizationExemption(result: MethodChannel.Result) {
+        try {
+            Log.d(TAG, "Requesting battery optimization exemption")
+            val context = this.context
+            val activity = this.activity
+            
+            if (context == null || activity == null) {
+                Log.e(TAG, "Context or activity not available for battery optimization request")
+                result.error("NO_CONTEXT_ACTIVITY", "Context or activity not available", null)
+                return
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                
+                if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    intent.data = Uri.parse("package:${context.packageName}")
+                    activity.startActivity(intent)
+                    
+                    Log.d(TAG, "Battery optimization exemption dialog shown")
+                    result.success(true)
+                } else {
+                    Log.d(TAG, "Battery optimization already ignored")
+                    result.success(true)
+                }
+            } else {
+                Log.d(TAG, "Battery optimization not applicable for this Android version")
+                result.success(true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error requesting battery optimization exemption: ${e.message}", e)
+            result.error("BATTERY_OPTIMIZATION_ERROR", "Error requesting battery optimization exemption: ${e.message}", e.toString())
+        }
+    }
+    
+    private fun isBatteryOptimizationIgnored(result: MethodChannel.Result) {
+        try {
+            val context = this.context
+            if (context == null) {
+                result.error("NO_CONTEXT", "Context not available", null)
+                return
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                val isIgnored = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+                
+                Log.d(TAG, "Battery optimization ignored: $isIgnored")
+                result.success(isIgnored)
+            } else {
+                Log.d(TAG, "Battery optimization not applicable for this Android version")
+                result.success(true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking battery optimization status: ${e.message}", e)
+            result.error("BATTERY_CHECK_ERROR", "Error checking battery optimization status: ${e.message}", e.toString())
         }
     }
 }

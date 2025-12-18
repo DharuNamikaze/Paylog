@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/core/utils/account_number_extractor.dart';
+import 'package:paylog/core/utils/account_number_extractor.dart';
 
 void main() {
   group('AccountNumberExtractor', () {

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction.dart';
-import 'package:flutter_sms_parser/domain/entities/transaction_type.dart';
-import 'package:flutter_sms_parser/domain/usecases/validate_transaction.dart';
+import 'package:paylog/domain/entities/transaction.dart';
+import 'package:paylog/domain/entities/transaction_type.dart';
+import 'package:paylog/domain/usecases/validate_transaction.dart';
 
 void main() {
   late ValidateTransaction validator;
