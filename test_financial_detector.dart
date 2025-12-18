@@ -39,4 +39,45 @@ void main() {
     
     // Requirement 2.3: Discard non-financial messages
     {
-      'message': 'Meeting scheduled 
+      'message': 'Meeting scheduled for tomorrow',
+      'expected': false,
+      'description': 'Non-financial message'
+    },
+  ];
+
+  print('Running ${testCases.length} test cases...\n');
+  
+  int passed = 0;
+  int failed = 0;
+  
+  for (int i = 0; i < testCases.length; i++) {
+    final testCase = testCases[i];
+    final message = testCase['message'] as String;
+    final expected = testCase['expected'] as bool;
+    final description = testCase['description'] as String;
+    
+    final result = detector.isFinancialMessage(message);
+    final success = result == expected;
+    
+    if (success) {
+      passed++;
+      print('✅ Test ${i + 1}: $description - PASSED');
+    } else {
+      failed++;
+      print('❌ Test ${i + 1}: $description - FAILED');
+      print('   Expected: $expected, Got: $result');
+      print('   Message: "$message"');
+    }
+  }
+  
+  print('\n=== Results ===');
+  print('Passed: $passed');
+  print('Failed: $failed');
+  print('Total: ${testCases.length}');
+  
+  if (failed == 0) {
+    print('\n🎉 All tests passed!');
+  } else {
+    print('\n⚠️  Some tests failed. Check implementation.');
+  }
+}

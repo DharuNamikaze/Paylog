@@ -1,13 +1,17 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../../domain/entities/transaction.dart' as domain;
 import '../../domain/entities/transaction_type.dart';
 import '../../domain/repositories/transaction_repository.dart';
+import '../datasources/local_storage_datasource.dart';
 
 /// Implementation of TransactionRepository using Firebase Firestore
 class TransactionRepositoryImpl implements TransactionRepository {
-  final FirebaseFirestore _firestore;
+  final FirebaseFirestore? _firestore;
+  final LocalStorageDataSource? _localDataSource;
   final Uuid _uuid;
   
   /// Maximum number of retry attempts for failed operations
@@ -18,8 +22,10 @@ class TransactionRepositoryImpl implements TransactionRepository {
   
   TransactionRepositoryImpl({
     FirebaseFirestore? firestore,
+    LocalStorageDataSource? localDataSource,
     Uuid? uuid,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+  })  : _firestore = firestore,
+        _localDataSource = localDataSource,
         _uuid = uuid ?? const Uuid();
   
   @override
@@ -30,48 +36,85 @@ class TransactionRepositoryImpl implements TransactionRepository {
     // Create transaction with ID
     final transactionWithId = transaction.copyWith(
       id: transactionId,
-      syncedToFirestore: true,
     );
     
-    // Prepare Firestore document data
-    final data = _transactionToFirestoreMap(transactionWithId);
-    
-    // Attempt to save with retry logic
-    await _executeWithRetry(() async {
-      await _firestore
-          .collection('users')
-          .doc(transaction.userId)
-          .collection('transactions')
-          .doc(transactionId)
-          .set(data);
-    });
+    try {
+      // Try to save to Firestore if available
+      if (_firestore != null) {
+        final data = _transactionToFirestoreMap(transactionWithId.copyWith(syncedToFirestore: true));
+        
+        await _executeWithRetry(() async {
+          await _firestore!
+              .collection('users')
+              .doc(transaction.userId)
+              .collection('transactions')
+              .doc(transactionId)
+              .set(data);
+        });
+        
+        developer.log('Transaction saved to Firestore: $transactionId', name: 'TransactionRepository');
+      } else {
+        developer.log('Firestore not available, saving locally only', name: 'TransactionRepository');
+      }
+      
+      // Always save to local storage as backup
+      if (_localDataSource != null) {
+        await _localDataSource!.saveTransaction(transactionWithId.copyWith(
+          syncedToFirestore: _firestore != null,
+        ));
+        developer.log('Transaction saved to local storage: $transactionId', name: 'TransactionRepository');
+      }
+      
+    } catch (e) {
+      developer.log('Error saving to Firestore, falling back to local storage: $e', name: 'TransactionRepository', error: e);
+      
+      // Fallback to local storage only
+      if (_localDataSource != null) {
+        await _localDataSource!.saveTransaction(transactionWithId.copyWith(syncedToFirestore: false));
+        // Queue for later sync
+        await _localDataSource!.queueTransaction(transactionWithId);
+        developer.log('Transaction queued for sync: $transactionId', name: 'TransactionRepository');
+      } else {
+        rethrow; // If no local storage, we can't save anywhere
+      }
+    }
     
     return transactionId;
   }
   
   @override
   Stream<List<domain.Transaction>> getTransactions(String userId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('transactions')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        try {
-          return _firestoreDocToTransaction(doc);
-        } catch (e) {
-          // Log error and skip malformed documents
-          print('Error parsing transaction ${doc.id}: $e');
-          return null;
+    if (_firestore != null) {
+      return _firestore!
+          .collection('users')
+          .doc(userId)
+          .collection('transactions')
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          try {
+            return _firestoreDocToTransaction(doc);
+          } catch (e) {
+            // Log error and skip malformed documents
+            developer.log('Error parsing transaction ${doc.id}: $e', name: 'TransactionRepository', error: e);
+            return null;
         }
       }).whereType<domain.Transaction>().toList();
     }).handleError((error) {
       // Handle stream errors
-      print('Error in transaction stream: $error');
+      developer.log('Error in transaction stream: $error', name: 'TransactionRepository', error: error);
       throw _handleFirestoreError(error);
     });
+    } else {
+      // Fallback to local storage if Firestore not available
+      if (_localDataSource != null) {
+        return _localDataSource!.getTransactionsStream(userId);
+      } else {
+        // Return empty stream if no data sources available
+        return Stream.value(<domain.Transaction>[]);
+      }
+    }
   }
   
   @override
@@ -86,11 +129,65 @@ class TransactionRepositoryImpl implements TransactionRepository {
   
   @override
   Future<void> syncOfflineQueue() async {
-    // This will be implemented in conjunction with local storage
-    // For now, this is a placeholder
-    throw UnimplementedError(
-      'syncOfflineQueue will be implemented with local storage integration',
-    );
+    try {
+      // Check if we have network connectivity
+      final connectivity = Connectivity();
+      final connectivityResult = await connectivity.checkConnectivity();
+      
+      if (connectivityResult == ConnectivityResult.none) {
+        developer.log('No network connectivity - skipping sync', name: 'TransactionRepository');
+        return;
+      }
+
+      // Get queued transactions from local storage
+      if (_localDataSource == null) {
+        developer.log('Local data source not available for sync', name: 'TransactionRepository');
+        return;
+      }
+      
+      final queuedTransactions = await _localDataSource!.getQueuedTransactions();
+      
+      if (queuedTransactions.isEmpty) {
+        developer.log('No transactions to sync', name: 'TransactionRepository');
+        return;
+      }
+
+      developer.log('Syncing ${queuedTransactions.length} queued transactions', name: 'TransactionRepository');
+      
+      int syncedCount = 0;
+      final List<domain.Transaction> failedTransactions = [];
+
+      // Attempt to sync each transaction
+      for (final transaction in queuedTransactions) {
+        try {
+          // Only sync to Firestore if available
+          if (_firestore != null) {
+            final data = _transactionToFirestoreMap(transaction.copyWith(syncedToFirestore: true));
+            await _firestore!
+                .collection('users')
+                .doc(transaction.userId)
+                .collection('transactions')
+                .doc(transaction.id)
+                .set(data);
+            developer.log('Synced transaction ${transaction.id} to Firestore', name: 'TransactionRepository');
+          }
+          
+          // Remove from local queue on success
+          await _localDataSource!.removeFromQueue(transaction.id);
+          syncedCount++;
+          
+        } catch (e) {
+          developer.log('Failed to sync transaction ${transaction.id}: $e', name: 'TransactionRepository', error: e);
+          failedTransactions.add(transaction);
+        }
+      }
+
+      developer.log('Sync completed: $syncedCount synced, ${failedTransactions.length} failed', name: 'TransactionRepository');
+      
+    } catch (e, stackTrace) {
+      developer.log('Error during sync: $e', name: 'TransactionRepository', error: e, stackTrace: stackTrace);
+      // Don't throw - sync failures shouldn't crash the app
+    }
   }
   
   /// Execute a function with exponential backoff retry logic

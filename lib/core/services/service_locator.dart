@@ -40,7 +40,7 @@ class ServiceLocator {
     await _initializeCoreServices();
     
     // Initialize data sources
-    _initializeDataSources();
+    await _initializeDataSources();
     
     // Initialize repositories
     _initializeRepositories();
@@ -64,7 +64,7 @@ class ServiceLocator {
     await _initializeCoreServicesWithoutFirebase();
     
     // Initialize data sources
-    _initializeDataSources();
+    await _initializeDataSources();
     
     // Initialize repositories without Firebase
     _initializeRepositoriesWithoutFirebase();
@@ -92,21 +92,28 @@ class ServiceLocator {
   }
 
   /// Initialize data sources
-  void _initializeDataSources() {
+  Future<void> _initializeDataSources() async {
     // SMS Platform Channel
     _services[SmsPlatformChannel] = SmsPlatformChannel();
     
     // Local Storage Data Source
-    _services[LocalStorageDataSource] = LocalStorageDataSource();
+    final localStorage = LocalStorageDataSource();
+    await localStorage.initialize();
+    _services[LocalStorageDataSource] = localStorage;
   }
 
   /// Initialize repositories
   void _initializeRepositories() {
-    // Transaction Repository
-    _services[TransactionRepository] = TransactionRepositoryImpl(
-      firestore: FirebaseFirestore.instance,
+    // Initialize local storage first
+    final localStorage = _services[LocalStorageDataSource] as LocalStorageDataSource;
+    
+    // For now, use local-only mode to avoid Firebase permission issues
+    debugPrint('🔄 Initializing in local-only mode to avoid Firebase permission issues');
+    _services[TransactionRepository] = LocalTransactionRepository(
+      localStorage: localStorage,
       uuid: _services[Uuid] as Uuid,
     );
+    debugPrint('✅ TransactionRepository initialized in local-only mode');
   }
 
   /// Initialize use cases
@@ -120,11 +127,16 @@ class ServiceLocator {
     // Transaction Validator
     _services[ValidateTransaction] = ValidateTransaction();
     
-    // Offline Queue Sync
-    _services[SyncOfflineQueue] = SyncOfflineQueue(
-      localStorage: _services[LocalStorageDataSource] as LocalStorageDataSource,
-      repository: _services[TransactionRepository] as TransactionRepositoryImpl,
-    );
+    // Offline Queue Sync - only if we have TransactionRepositoryImpl
+    final repository = _services[TransactionRepository];
+    if (repository is TransactionRepositoryImpl) {
+      _services[SyncOfflineQueue] = SyncOfflineQueue(
+        localStorage: _services[LocalStorageDataSource] as LocalStorageDataSource,
+        repository: repository,
+      );
+    } else {
+      debugPrint('⚠️ Skipping SyncOfflineQueue - using LocalTransactionRepository (no sync needed)');
+    }
     
     // Duplicate Detector
     _services[DuplicateDetector] = DuplicateDetector();
@@ -275,33 +287,66 @@ class ServiceLocator {
 
   /// Dispose all services and clean up resources
   Future<void> dispose() async {
-    // Dispose SMS Listener Service
-    if (_services.containsKey(SmsListenerService)) {
-      await get<SmsListenerService>().dispose();
+    // Only dispose if initialized
+    if (!_isInitialized) {
+      debugPrint('⚠️ ServiceLocator not initialized, skipping dispose');
+      return;
     }
     
-    // Dispose Duplicate Detector
-    if (_services.containsKey(DuplicateDetector)) {
-      await get<DuplicateDetector>().close();
+    try {
+      // Dispose SMS Listener Service
+      if (_services.containsKey(SmsListenerService)) {
+        final service = _services[SmsListenerService] as SmsListenerService?;
+        if (service != null) {
+          await service.dispose();
+        }
+      }
+      
+      // Dispose Duplicate Detector
+      if (_services.containsKey(DuplicateDetector)) {
+        final detector = _services[DuplicateDetector] as DuplicateDetector?;
+        if (detector != null) {
+          await detector.close();
+        }
+      }
+      
+      // Dispose SMS Platform Channel
+      if (_services.containsKey(SmsPlatformChannel)) {
+        final channel = _services[SmsPlatformChannel] as SmsPlatformChannel?;
+        if (channel != null) {
+          channel.dispose();
+        }
+      }
+      
+      // Close Hive boxes (only if they're open)
+      try {
+        if (Hive.isBoxOpen('transactions')) {
+          await Hive.box('transactions').close();
+        }
+        if (Hive.isBoxOpen('queue')) {
+          await Hive.box('queue').close();
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error closing Hive boxes: $e');
+      }
+      
+    } catch (e) {
+      debugPrint('⚠️ Error during service disposal: $e');
+    } finally {
+      _services.clear();
+      _isInitialized = false;
     }
-    
-    // Dispose SMS Platform Channel
-    if (_services.containsKey(SmsPlatformChannel)) {
-      get<SmsPlatformChannel>().dispose();
-    }
-    
-    // Close Hive boxes
-    await Hive.close();
-    
-    _services.clear();
-    _isInitialized = false;
   }
 
   /// Reset the service locator (for testing)
   Future<void> reset() async {
-    await dispose();
-    _services.clear();
-    _isInitialized = false;
+    if (_isInitialized) {
+      await dispose();
+    } else {
+      // If not initialized, just clear everything
+      _services.clear();
+      _isInitialized = false;
+    }
   }
 }
 

@@ -107,17 +107,26 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
     Emitter<TransactionState> emit,
   ) async {
     try {
+      print('🔴 [TransactionBloc] LoadTransactions called for user: ${event.userId}');
       emit(TransactionLoading());
       _currentUserId = event.userId;
 
       // Cancel any existing subscription
       await _transactionSubscription?.cancel();
+      print('🔴 [TransactionBloc] Previous subscription cancelled');
 
       // Subscribe to transaction stream
+      print('🔴 [TransactionBloc] Subscribing to transaction stream...');
       _transactionSubscription = _transactionRepository
           .getTransactions(event.userId)
           .listen(
             (transactions) {
+              print('🔴 [TransactionBloc] Received ${transactions.length} transactions from repository');
+              
+              if (transactions.isNotEmpty) {
+                print('🔴 [TransactionBloc] Sample transaction: ${transactions.first.id}, amount: ${transactions.first.amount}');
+              }
+              
               // Sort transactions by date and time (most recent first)
               final sortedTransactions = List<Transaction>.from(transactions)
                 ..sort((a, b) {
@@ -126,12 +135,18 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
                   return b.time.compareTo(a.time);
                 });
 
+              print('🔴 [TransactionBloc] Sorted ${sortedTransactions.length} transactions');
+
               // Use add instead of emit to avoid the completion issue
               if (!isClosed) {
+                print('🔴 [TransactionBloc] Emitting TransactionStreamUpdate with ${sortedTransactions.length} transactions');
                 add(_TransactionStreamUpdate(sortedTransactions));
+              } else {
+                print('⚠️ [TransactionBloc] Bloc is closed, not emitting update');
               }
             },
             onError: (error) {
+              print('❌ [TransactionBloc] Stream error: $error');
               if (!isClosed) {
                 final currentTransactions = state is TransactionLoaded
                     ? (state as TransactionLoaded).transactions
@@ -143,7 +158,9 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
               }
             },
           );
+      print('✅ [TransactionBloc] Stream subscription established');
     } catch (e) {
+      print('❌ [TransactionBloc] LoadTransactions failed: $e');
       emit(TransactionError(
         error: 'Failed to load transactions: ${e.toString()}',
       ));
@@ -220,7 +237,14 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
     _TransactionStreamUpdate event,
     Emitter<TransactionState> emit,
   ) async {
+    print('🔴 [TransactionBloc] _onTransactionStreamUpdate called with ${event.transactions.length} transactions');
+    
+    if (event.transactions.isNotEmpty) {
+      print('🔴 [TransactionBloc] First transaction: ${event.transactions.first.id}, amount: ${event.transactions.first.amount}');
+    }
+    
     emit(TransactionLoaded(transactions: event.transactions));
+    print('✅ [TransactionBloc] Emitted TransactionLoaded state with ${event.transactions.length} transactions');
   }
 
   Future<void> _onTransactionStreamError(

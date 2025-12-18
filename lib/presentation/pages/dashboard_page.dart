@@ -26,13 +26,34 @@ class _DashboardPageState extends State<DashboardPage> {
     super.initState();
     // Load transactions when the page initializes
     context.read<TransactionBloc>().add(LoadTransactions(widget.userId));
+    
+    // Auto-start SMS monitoring
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoStartSmsMonitoring();
+    });
+  }
+  
+  /// Automatically start SMS monitoring if permissions are available
+  void _autoStartSmsMonitoring() {
+    try {
+      final smsBloc = context.read<SmsBloc>();
+      final currentState = smsBloc.state;
+      
+      // Only auto-start if not already listening and not in error state
+      if (currentState is! SmsListening && currentState is! SmsError) {
+        smsBloc.add(StartSmsListening());
+      }
+    } catch (e) {
+      // SmsBloc not available - this is fine, SMS functionality is optional
+      debugPrint('SMS monitoring not available: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Transaction Dashboard'),
+        title: const Text('Paylog'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(

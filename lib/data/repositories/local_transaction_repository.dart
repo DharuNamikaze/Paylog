@@ -21,8 +21,12 @@ class LocalTransactionRepository implements TransactionRepository {
   @override
   Future<String> saveTransaction(Transaction transaction) async {
     try {
+      print('🔵 [LocalTransactionRepository] saveTransaction called');
+      print('🔵 [LocalTransactionRepository] Input transaction: ${transaction.id}, amount: ${transaction.amount}, user: ${transaction.userId}');
+      
       // Generate ID if not provided
       final transactionId = transaction.id ?? uuid.v4();
+      print('🔵 [LocalTransactionRepository] Generated/using ID: $transactionId');
       
       // Create transaction with correct constructor
       final transactionWithId = Transaction(
@@ -42,11 +46,30 @@ class LocalTransactionRepository implements TransactionRepository {
         confidenceScore: transaction.confidenceScore,
       );
 
-      // Save to local storage using queue method
-      await localStorage.queueTransaction(transactionWithId);
+      print('🔵 [LocalTransactionRepository] Saving to cache...');
+      // Save to local storage cache for immediate UI display
+      await localStorage.saveTransaction(transactionWithId);
+      print('✅ [LocalTransactionRepository] Saved to cache successfully');
       
+      print('🔵 [LocalTransactionRepository] Saving to queue...');
+      // Also queue for potential future sync (if needed)
+      await localStorage.queueTransaction(transactionWithId);
+      print('✅ [LocalTransactionRepository] Saved to queue successfully');
+      
+      // Verify the transaction was saved by reading it back
+      final savedTransactions = await localStorage.getCachedTransactions();
+      print('🔵 [LocalTransactionRepository] Total cached transactions after save: ${savedTransactions.length}');
+      final foundTransaction = savedTransactions.where((t) => t.id == transactionId).firstOrNull;
+      if (foundTransaction != null) {
+        print('✅ [LocalTransactionRepository] Transaction verified in cache: ${foundTransaction.id}');
+      } else {
+        print('❌ [LocalTransactionRepository] Transaction NOT found in cache after save!');
+      }
+      
+      print('✅ [LocalTransactionRepository] saveTransaction completed successfully: $transactionId');
       return transactionId;
     } catch (e) {
+      print('❌ [LocalTransactionRepository] saveTransaction failed: $e');
       throw Exception('Failed to save transaction locally: $e');
     }
   }
@@ -54,9 +77,20 @@ class LocalTransactionRepository implements TransactionRepository {
   @override
   Stream<List<Transaction>> getTransactions(String userId) {
     try {
-      // Convert Future to Stream for compatibility
-      return Stream.fromFuture(localStorage.getCachedTransactions());
+      print('🟡 [LocalTransactionRepository] getTransactions called for user: $userId');
+      
+      // Use the reactive stream from LocalStorageDataSource instead of single-shot Future
+      return localStorage.getTransactionsStream(userId).map((transactions) {
+        print('🟡 [LocalTransactionRepository] Retrieved ${transactions.length} transactions from reactive stream');
+        
+        if (transactions.isNotEmpty) {
+          print('🟡 [LocalTransactionRepository] Sample transaction: ${transactions.first.id}, amount: ${transactions.first.amount}');
+        }
+        
+        return transactions;
+      });
     } catch (e) {
+      print('❌ [LocalTransactionRepository] getTransactions failed: $e');
       throw Exception('Failed to get transactions from local storage: $e');
     }
   }

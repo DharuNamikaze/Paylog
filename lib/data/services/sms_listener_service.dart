@@ -144,8 +144,10 @@ class SmsListenerService {
       await _smsChannel.startListening();
       
       // Subscribe to SMS stream and process messages
+      print('🟠 [SmsListenerService] Subscribing to SMS stream...');
       _smsSubscription = _smsChannel.smsStream.listen(
         (platformSmsMessage) {
+          print('🟠 [SmsListenerService] SMS received from platform channel: ${platformSmsMessage.sender}');
           // Convert platform SmsMessage to domain SmsMessage
           final domainSmsMessage = SmsMessage(
             sender: platformSmsMessage.sender,
@@ -153,13 +155,19 @@ class SmsListenerService {
             timestamp: platformSmsMessage.timestamp,
             threadId: platformSmsMessage.threadId,
           );
+          print('🟠 [SmsListenerService] Processing SMS message...');
           _processSmsMessage(domainSmsMessage);
         },
-        onError: _handleSmsStreamError,
+        onError: (error) {
+          print('❌ [SmsListenerService] SMS stream error: $error');
+          _handleSmsStreamError(error);
+        },
         onDone: () {
+          print('⚠️ [SmsListenerService] SMS stream closed - this should not happen during normal operation');
           developer.log('SMS stream closed', name: 'SmsListenerService');
           _isListening = false;
         },
+        cancelOnError: false, // Don't cancel on errors, keep listening
       );
       
       _isListening = true;
@@ -365,9 +373,14 @@ class SmsListenerService {
       }
       
       // Step 7: Save to database
+      print('🟠 [SmsListenerService] Saving transaction to repository...');
+      print('🟠 [SmsListenerService] Transaction details: amount=${parsedTransaction.amount}, user=${_currentUserId}');
+      
       final transactionId = await _repository.saveTransaction(
         transaction.copyWith(syncedToFirestore: true),
       );
+      
+      print('✅ [SmsListenerService] Transaction saved with ID: $transactionId');
       
       _stats['savedToDatabase'] = (_stats['savedToDatabase'] ?? 0) + 1;
       
@@ -380,6 +393,7 @@ class SmsListenerService {
         transactionId,
       ));
       
+      print('🟠 [SmsListenerService] Transaction processing completed successfully');
       developer.log(
         'Successfully processed transaction: $transactionId (₹${parsedTransaction.amount})',
         name: 'SmsListenerService',

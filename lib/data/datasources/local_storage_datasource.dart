@@ -86,17 +86,27 @@ class LocalStorageDataSource {
   Future<List<Transaction>> getCachedTransactions() async {
     _ensureInitialized();
     
+    print('🟢 [LocalStorageDataSource] getCachedTransactions called');
+    print('🟢 [LocalStorageDataSource] Cache box keys: ${_cacheBox!.keys.length}');
+    
     final transactions = <Transaction>[];
     
     for (var key in _cacheBox!.keys) {
       try {
+        print('🟢 [LocalStorageDataSource] Processing key: $key');
         final json = _cacheBox!.get(key);
         if (json != null) {
+          print('🟢 [LocalStorageDataSource] Found JSON for key $key');
           // Convert Map<dynamic, dynamic> to Map<String, dynamic>
           final jsonMap = Map<String, dynamic>.from(json);
-          transactions.add(Transaction.fromJson(jsonMap));
+          final transaction = Transaction.fromJson(jsonMap);
+          transactions.add(transaction);
+          print('✅ [LocalStorageDataSource] Successfully parsed transaction: ${transaction.id}, amount: ${transaction.amount}');
+        } else {
+          print('⚠️ [LocalStorageDataSource] No JSON found for key: $key');
         }
       } catch (e) {
+        print('❌ [LocalStorageDataSource] Error parsing transaction for key $key: $e');
         // Log error but continue processing other transactions
         print('Error deserializing cached transaction: $e');
       }
@@ -148,6 +158,57 @@ class LocalStorageDataSource {
     await _metadataBox!.delete('last_cache_update');
   }
   
+  /// Save a transaction to local storage
+  Future<void> saveTransaction(Transaction transaction) async {
+    _ensureInitialized();
+    
+    print('🟢 [LocalStorageDataSource] saveTransaction called for: ${transaction.id}');
+    
+    final transactionJson = transaction.toJson();
+    print('🟢 [LocalStorageDataSource] Transaction JSON created, keys: ${transactionJson.keys.join(', ')}');
+    
+    await _cacheBox!.put(transaction.id, transactionJson);
+    print('✅ [LocalStorageDataSource] Transaction saved to cache box with key: ${transaction.id}');
+    
+    // Verify it was saved
+    final saved = _cacheBox!.get(transaction.id);
+    if (saved != null) {
+      print('✅ [LocalStorageDataSource] Transaction verified in cache box');
+    } else {
+      print('❌ [LocalStorageDataSource] Transaction NOT found in cache box after save!');
+    }
+  }
+  
+  /// Get transactions stream for a specific user
+  Stream<List<Transaction>> getTransactionsStream(String userId) async* {
+    _ensureInitialized();
+    
+    print('🟢 [LocalStorageDataSource] getTransactionsStream called for user: $userId');
+    
+    // Get initial cached transactions
+    final cachedTransactions = await getCachedTransactions();
+    
+    // Filter by userId
+    final userTransactions = cachedTransactions
+        .where((transaction) => transaction.userId == userId)
+        .toList();
+    
+    print('🟢 [LocalStorageDataSource] Initial stream yield: ${userTransactions.length} transactions');
+    yield userTransactions;
+    
+    // Listen for changes in the cache box
+    print('🟢 [LocalStorageDataSource] Setting up cache box watcher...');
+    yield* _cacheBox!.watch().asyncMap((_) async {
+      print('🟢 [LocalStorageDataSource] Cache box changed! Fetching updated transactions...');
+      final updatedTransactions = await getCachedTransactions();
+      final filteredTransactions = updatedTransactions
+          .where((transaction) => transaction.userId == userId)
+          .toList();
+      print('🟢 [LocalStorageDataSource] Stream update: ${filteredTransactions.length} transactions for user $userId');
+      return filteredTransactions;
+    });
+  }
+
   /// Close all Hive boxes
   Future<void> close() async {
     await _queueBox?.close();
