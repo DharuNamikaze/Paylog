@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 // Conditional imports - only import if services are available
 import 'core/services/service_locator.dart';
 import 'core/routes/app_routes.dart';
+import 'core/services/background_sms_service.dart';
 import 'presentation/bloc/sms_bloc.dart';
 import 'presentation/bloc/transaction_bloc.dart';
 
@@ -36,6 +37,9 @@ void main() async {
     debugPrint('✅ Service locator initialized successfully (with Firebase)');
     
     servicesInitialized = true;
+    
+    // Start background SMS monitoring
+    _startBackgroundMonitoring();
   } catch (e, stackTrace) {
     debugPrint('❌ Firebase initialization failed: $e');
     debugPrint('Stack trace: $stackTrace');
@@ -59,6 +63,9 @@ void main() async {
       debugPrint('✅ Service locator initialized successfully (local-only mode)');
       
       servicesInitialized = true;
+      
+      // Start background SMS monitoring
+      _startBackgroundMonitoring();
     } catch (fallbackError) {
       debugPrint('❌ Fallback initialization also failed: $fallbackError');
       servicesInitialized = false;
@@ -66,6 +73,35 @@ void main() async {
   }
   
   runApp(MyApp(servicesInitialized: servicesInitialized));
+}
+
+/// Start background SMS monitoring service
+/// 
+/// This ensures SMS monitoring continues even when the app is closed
+Future<void> _startBackgroundMonitoring() async {
+  try {
+    debugPrint('🔄 Starting background SMS monitoring...');
+    
+    // Start the background service
+    final started = await BackgroundSmsService.startBackgroundMonitoring();
+    
+    if (started) {
+      debugPrint('✅ Background SMS monitoring started successfully');
+      
+      // Request battery optimization exemption for better reliability
+      final batteryOptimized = await BackgroundSmsService.isBatteryOptimizationIgnored();
+      if (!batteryOptimized) {
+        debugPrint('⚠️ Battery optimization not ignored - requesting exemption');
+        await BackgroundSmsService.requestBatteryOptimizationExemption();
+      } else {
+        debugPrint('✅ Battery optimization already ignored');
+      }
+    } else {
+      debugPrint('❌ Failed to start background SMS monitoring');
+    }
+  } catch (e) {
+    debugPrint('❌ Error starting background SMS monitoring: $e');
+  }
 }
 
 class MyApp extends StatelessWidget {

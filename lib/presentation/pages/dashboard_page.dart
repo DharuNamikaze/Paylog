@@ -5,6 +5,7 @@ import '../../domain/entities/transaction_type.dart';
 import '../bloc/transaction_bloc.dart';
 import '../bloc/sms_bloc.dart';
 import '../../core/routes/app_routes.dart';
+import 'settings_page.dart';
 
 /// Dashboard page that displays recent transactions with real-time updates
 class DashboardPage extends StatefulWidget {
@@ -62,6 +63,18 @@ class _DashboardPageState extends State<DashboardPage> {
               context.read<TransactionBloc>().add(RefreshTransactions(widget.userId));
             },
             tooltip: 'Refresh transactions',
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SettingsPage(),
+                ),
+              );
+            },
+            tooltip: 'Settings',
           ),
         ],
       ),
