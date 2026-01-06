@@ -8,6 +8,7 @@ import 'core/services/service_locator.dart';
 import 'core/routes/app_routes.dart';
 import 'core/services/background_sms_service.dart';
 import 'core/services/cloud_sync_service.dart';
+import 'core/theme/app_theme.dart';
 import 'presentation/bloc/sms_bloc.dart';
 import 'presentation/bloc/transaction_bloc.dart';
 import 'presentation/bloc/sync_bloc.dart';
@@ -162,10 +163,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Fallback to simple app if services failed to initialize
       return MaterialApp(
         title: 'PayLog',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-          useMaterial3: true,
-        ),
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.system,
         home: const ServiceErrorPage(),
         debugShowCheckedModeBanner: false,
       );
@@ -221,10 +221,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       providers: providers,
       child: MaterialApp(
         title: 'PayLog',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-          useMaterial3: true,
-        ),
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.system,
         // Set up routing
         initialRoute: AppRoutes.dashboard,
         onGenerateRoute: AppRouteGenerator.generateRoute,
@@ -242,7 +241,7 @@ class ServiceErrorPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('PayLog'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: Theme.of(context).colorScheme.primary,
       ),
       body: Center(
         child: Padding(
@@ -253,7 +252,7 @@ class ServiceErrorPage extends StatelessWidget {
               const Icon(
                 Icons.warning_amber_rounded,
                 size: 64,
-                color: Colors.orange,
+                color: AppTheme.warningOrange,
               ),
               const SizedBox(height: 16),
               Text(
@@ -285,7 +284,7 @@ class ServiceErrorPage extends StatelessWidget {
                       Text(
                         'The app is running in safe mode with limited functionality.',
                         style: TextStyle(
-                          color: Colors.orange.shade700,
+                          color: AppTheme.warningOrange,
                           fontWeight: FontWeight.w500,
                         ),
                       ),

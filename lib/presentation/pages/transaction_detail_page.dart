@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/transaction.dart';
 import '../../domain/entities/transaction_type.dart';
+import '../../core/theme/app_theme.dart';
 import '../bloc/transaction_bloc.dart';
 
 /// Transaction Detail page that shows comprehensive transaction information
@@ -23,7 +24,7 @@ class TransactionDetailPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transaction Details'),
-        backgroundColor: theme.colorScheme.inversePrimary,
+        backgroundColor: theme.colorScheme.primary,
         actions: [
           IconButton(
             icon: const Icon(Icons.copy),
@@ -47,9 +48,9 @@ class TransactionDetailPage extends StatelessWidget {
                 value: 'delete',
                 child: Row(
                   children: [
-                    Icon(Icons.delete, color: Colors.red),
+                    Icon(Icons.delete, color: AppTheme.errorRed),
                     SizedBox(width: 8),
-                    Text('Delete', style: TextStyle(color: Colors.red)),
+                    Text('Delete', style: TextStyle(color: AppTheme.errorRed)),
                   ],
                 ),
               ),
@@ -200,21 +201,21 @@ class TransactionDetailPage extends StatelessWidget {
                     context,
                     'Synced',
                     Icons.cloud_done,
-                    Colors.green,
+                    AppTheme.successGreen,
                   )
                 else
                   _buildStatusChip(
                     context,
                     'Pending Sync',
                     Icons.cloud_upload,
-                    Colors.orange,
+                    AppTheme.warningOrange,
                   ),
                 if (transaction.confidenceScore < 0.8)
                   _buildStatusChip(
                     context,
                     'Low Confidence',
                     Icons.warning_amber,
-                    Colors.orange,
+                    AppTheme.warningOrange,
                   ),
               ],
             ),
@@ -499,7 +500,7 @@ ${transaction.smsContent}
               Navigator.of(context).pop();
               _deleteTransaction(context);
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.errorRed),
             child: const Text('Delete'),
           ),
         ],
@@ -536,9 +537,9 @@ ${transaction.smsContent}
     final theme = Theme.of(context);
     switch (transaction.transactionType) {
       case TransactionType.debit:
-        return Colors.red;
+        return AppTheme.errorRed;
       case TransactionType.credit:
-        return Colors.green;
+        return AppTheme.successGreen;
       case TransactionType.unknown:
         return theme.colorScheme.onSurfaceVariant;
     }

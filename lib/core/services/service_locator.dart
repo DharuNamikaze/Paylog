@@ -122,18 +122,29 @@ class ServiceLocator {
 
   /// Initialize repositories
   /// 
-  /// Creates TransactionRepositoryImpl (Firestore-backed) when:
-  /// - AuthService.isAuthenticated == true
-  /// - Firebase initialization succeeded
+  /// CRITICAL: LocalTransactionRepository is ALWAYS used for UI reads (source of truth)
+  /// TransactionRepositoryImpl is only used for cloud uploads by CloudSyncService
   /// 
-  /// Falls back to LocalTransactionRepository only on actual auth/Firebase failure.
+  /// Requirements: 1.1, 1.2 - Local storage is source of truth, UI reads ONLY from local
   void _initializeRepositories() {
     final localStorage = _services[LocalStorageDataSource] as LocalStorageDataSource;
     final authService = _services[AuthService] as AuthService;
     
-    // Decision: Use Firestore-backed repo if authenticated, local-only otherwise
+    // ALWAYS use LocalTransactionRepository for UI reads (source of truth)
+    // Requirements: 1.1, 1.2 - UI must always read from local DB
+    debugPrint('🔄 Initializing LocalTransactionRepository (source of truth for UI)');
+    final localRepo = LocalTransactionRepository(
+      localStorage: localStorage,
+      uuid: _services[Uuid] as Uuid,
+    );
+    _services[TransactionRepository] = localRepo;
+    _services[LocalTransactionRepository] = localRepo;
+    debugPrint('✅ LocalTransactionRepository initialized (UI will read from local storage)');
+    
+    // If authenticated, also create TransactionRepositoryImpl for cloud uploads ONLY
+    // This is used by CloudSyncService, NOT for UI reads
     if (authService.isAuthenticated) {
-      debugPrint('🔄 Initializing TransactionRepositoryImpl (cloud-enabled mode)');
+      debugPrint('🔄 Initializing TransactionRepositoryImpl (cloud uploads only)');
       debugPrint('   Auth UID: ${authService.currentUid}');
       
       final firestoreRepo = TransactionRepositoryImpl(
@@ -143,20 +154,12 @@ class ServiceLocator {
         authService: authService,
       );
       
-      _services[TransactionRepository] = firestoreRepo;
-      _services[TransactionRepositoryImpl] = firestoreRepo; // Also register concrete type
-      debugPrint('✅ TransactionRepository initialized in cloud-enabled mode');
+      _services[TransactionRepositoryImpl] = firestoreRepo; // For CloudSyncService only
+      debugPrint('✅ TransactionRepositoryImpl initialized (cloud uploads only)');
     } else {
-      // Fallback: Local-only mode due to auth failure
-      debugPrint('🔄 Initializing in local-only mode (auth not available)');
+      debugPrint('ℹ️ Skipping TransactionRepositoryImpl - auth not available (local-only mode)');
       debugPrint('   isAuthenticated: ${authService.isAuthenticated}');
       debugPrint('   isLocalOnlyMode: ${authService.isLocalOnlyMode}');
-      
-      _services[TransactionRepository] = LocalTransactionRepository(
-        localStorage: localStorage,
-        uuid: _services[Uuid] as Uuid,
-      );
-      debugPrint('✅ TransactionRepository initialized in local-only mode');
     }
   }
 
@@ -171,7 +174,7 @@ class ServiceLocator {
     // Transaction Validator
     _services[ValidateTransaction] = ValidateTransaction();
     
-    // Offline Queue Sync - only if we have TransactionRepositoryImpl
+    // Offline Queue Sync - only if we have TransactionRepositoryImpl (cloud uploads)
     if (_services.containsKey(TransactionRepositoryImpl)) {
       final firestoreRepo = _services[TransactionRepositoryImpl] as TransactionRepositoryImpl;
       _services[SyncOfflineQueue] = SyncOfflineQueue(
@@ -180,7 +183,7 @@ class ServiceLocator {
       );
       debugPrint('✅ SyncOfflineQueue initialized (cloud-enabled mode)');
     } else {
-      debugPrint('⚠️ Skipping SyncOfflineQueue - using LocalTransactionRepository (no sync needed)');
+      debugPrint('ℹ️ Skipping SyncOfflineQueue - no TransactionRepositoryImpl (local-only mode)');
     }
     
     // Duplicate Detector
@@ -213,13 +216,13 @@ class ServiceLocator {
 
   /// Initialize application services
   Future<void> _initializeApplicationServices() async {
-    // SMS Listener Service
+    // SMS Listener Service - uses LocalTransactionRepository (source of truth)
     final smsListenerService = SmsListenerService(
       smsChannel: _services[SmsPlatformChannel] as SmsPlatformChannel,
       financialDetector: _services[FinancialContextDetector] as FinancialContextDetector,
       smsParser: _services[ParseSmsTransaction] as ParseSmsTransaction,
       validator: _services[ValidateTransaction] as ValidateTransaction,
-      repository: _services[TransactionRepository] as TransactionRepository,
+      repository: _services[TransactionRepository] as TransactionRepository, // LocalTransactionRepository
       duplicateDetector: _services[DuplicateDetector] as DuplicateDetector,
       uuid: _services[Uuid] as Uuid,
     );
@@ -233,7 +236,7 @@ class ServiceLocator {
     // Auth → Connectivity → Sync
     debugPrint('🔄 Initializing CloudSyncService...');
     
-    // Get TransactionRepositoryImpl if available (cloud-enabled mode)
+    // Get TransactionRepositoryImpl if available (for cloud uploads only)
     final TransactionRepositoryImpl? firestoreRepo = 
         _services.containsKey(TransactionRepositoryImpl) 
             ? _services[TransactionRepositoryImpl] as TransactionRepositoryImpl 
@@ -243,9 +246,9 @@ class ServiceLocator {
     
     // Log sync mode decision
     if (firestoreRepo != null && authService.isAuthenticated) {
-      debugPrint('   CloudSyncService: cloud-enabled mode (FirestoreRepo available)');
+      debugPrint('   CloudSyncService: cloud-enabled mode (uploads to Firestore)');
     } else {
-      debugPrint('   CloudSyncService: local-only mode');
+      debugPrint('   CloudSyncService: local-only mode (no cloud uploads)');
       debugPrint('   - firestoreRepo: ${firestoreRepo != null ? "available" : "null"}');
       debugPrint('   - isAuthenticated: ${authService.isAuthenticated}');
     }
@@ -260,6 +263,12 @@ class ServiceLocator {
     await cloudSyncService.initialize();
     _services[CloudSyncService] = cloudSyncService;
     debugPrint('✅ CloudSyncService initialized');
+
+    // Wire up LocalTransactionRepository with CloudSyncService for queueing
+    // Requirements: 1.1 - Queue transaction for cloud upload after local save
+    final localRepo = _services[LocalTransactionRepository] as LocalTransactionRepository;
+    localRepo.setCloudSyncService(cloudSyncService);
+    debugPrint('✅ LocalTransactionRepository wired to CloudSyncService');
   }
 
   /// Initialize core services without Firebase

@@ -122,6 +122,7 @@ class TransactionRepositoryImpl implements TransactionRepository {
   @override
   Stream<List<domain.Transaction>> getTransactions(String userId) {
     if (_firestore != null) {
+      // Read from Firestore with fallback to local cache
       return _firestore!
           .collection('users')
           .doc(userId)
@@ -136,13 +137,16 @@ class TransactionRepositoryImpl implements TransactionRepository {
             // Log error and skip malformed documents
             developer.log('Error parsing transaction ${doc.id}: $e', name: 'TransactionRepository', error: e);
             return null;
+          }
+        }).whereType<domain.Transaction>().toList();
+      }).handleError((error) {
+        // On Firestore error, fallback to local cache
+        developer.log('Error in transaction stream, falling back to local cache: $error', name: 'TransactionRepository', error: error);
+        if (_localDataSource != null) {
+          return _localDataSource!.getTransactionsStream(userId);
         }
-      }).whereType<domain.Transaction>().toList();
-    }).handleError((error) {
-      // Handle stream errors
-      developer.log('Error in transaction stream: $error', name: 'TransactionRepository', error: error);
-      throw _handleFirestoreError(error);
-    });
+        throw _handleFirestoreError(error);
+      });
     } else {
       // Fallback to local storage if Firestore not available
       if (_localDataSource != null) {

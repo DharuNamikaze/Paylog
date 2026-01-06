@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../core/theme/app_theme.dart';
 import '../bloc/sync_bloc.dart';
 
 /// Widget that displays the current sync status with visual indicators
@@ -106,7 +107,7 @@ class SyncStatusWidget extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.orange,
+        color: AppTheme.warningOrange,
         borderRadius: BorderRadius.circular(10),
       ),
       constraints: const BoxConstraints(
@@ -138,7 +139,7 @@ class SyncStatusWidget extends StatelessWidget {
     if (state is SyncComplete) {
       return const _StatusInfo(
         icon: Icons.cloud_done,
-        color: Colors.green,
+        color: AppTheme.successGreen,
         text: 'All synced',
         tooltip: 'All transactions synced',
       );
@@ -147,7 +148,7 @@ class SyncStatusWidget extends StatelessWidget {
     if (state is SyncPending) {
       return _StatusInfo(
         icon: Icons.cloud_upload_outlined,
-        color: Colors.orange,
+        color: AppTheme.warningOrange,
         text: '${state.pendingCount} pending',
         tooltip: '${state.pendingCount} transaction${state.pendingCount == 1 ? '' : 's'} pending sync',
       );
@@ -156,7 +157,7 @@ class SyncStatusWidget extends StatelessWidget {
     if (state is SyncError) {
       return _StatusInfo(
         icon: Icons.cloud_off,
-        color: Colors.red,
+        color: AppTheme.errorRed,
         text: 'Sync error',
         tooltip: state.message,
       );
@@ -276,15 +277,15 @@ class SyncStatusCard extends StatelessWidget {
       messageIcon = Icons.sync;
     } else if (state is SyncComplete) {
       message = 'All transactions synced to cloud';
-      textColor = Colors.green.shade700;
+      textColor = AppTheme.successGreen;
       messageIcon = Icons.check_circle_outline;
     } else if (state is SyncPending) {
       message = '${state.pendingCount} transaction${state.pendingCount == 1 ? '' : 's'} waiting to sync';
-      textColor = Colors.orange.shade700;
+      textColor = AppTheme.warningOrange;
       messageIcon = Icons.cloud_upload_outlined;
     } else if (state is SyncError) {
       message = state.message;
-      textColor = Colors.red.shade700;
+      textColor = AppTheme.errorRed;
       messageIcon = Icons.error_outline;
     } else if (state is SyncOffline) {
       message = 'Device is offline. ${state.pendingCount} transaction${state.pendingCount == 1 ? '' : 's'} will sync when online.';
@@ -342,10 +343,10 @@ class SyncStatusCard extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: isSyncing 
                   ? Colors.grey.shade200 
-                  : Colors.blue.shade100,
+                  : AppTheme.primaryBlue.withValues(alpha: 0.1),
               foregroundColor: isSyncing 
                   ? Colors.grey 
-                  : Colors.blue.shade700,
+                  : AppTheme.primaryBlue,
             ),
           ),
         
@@ -354,7 +355,7 @@ class SyncStatusCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.green.shade50,
+              color: AppTheme.successGreen.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -363,13 +364,13 @@ class SyncStatusCard extends StatelessWidget {
                 Icon(
                   Icons.check_circle,
                   size: 16,
-                  color: Colors.green.shade700,
+                  color: AppTheme.successGreen,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   'All synced',
                   style: TextStyle(
-                    color: Colors.green.shade700,
+                    color: AppTheme.successGreen,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -436,7 +437,7 @@ class TransactionSyncIndicator extends StatelessWidget {
       child: Icon(
         isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
         size: size,
-        color: isSynced ? Colors.green : Colors.orange,
+        color: isSynced ? AppTheme.successGreen : AppTheme.warningOrange,
       ),
     );
   }

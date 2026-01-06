@@ -2,7 +2,22 @@
 
 ## Overview
 
-This design implements an event-driven, offline-first synchronization system for uploading locally stored SMS transactions to Firebase Firestore. The architecture prioritizes data integrity through cloud-side deduplication using transaction hashes as document IDs, battery efficiency through event-driven sync triggers, and security through Firebase Anonymous Authentication.
+This design implements a **production-locked, offline-first, upload-only** synchronization system for uploading locally stored SMS transactions to Firebase Firestore.
+
+### Architecture Principles (NON-NEGOTIABLE)
+
+1. **Local Storage = Source of Truth**: All UI reads come from local Hive DB, never Firestore
+2. **Firestore = Backup Mirror**: Cloud is for replication only, not primary storage
+3. **Upload-Only Sync**: Sync uploads unsynced transactions, never pulls or deletes
+4. **UI Independence**: Sync status affects only icons/badges, never transaction visibility
+5. **Idempotent Writes**: Hash-based document IDs prevent duplicates in Firestore
+
+### Pipeline Flow
+```
+SMS received → parse transaction → store locally (SOURCE OF TRUTH)
+            → if internet available → upload to Firestore
+            → mark as synced → KEEP local data permanently
+```
 
 The system integrates with the existing `LocalStorageDataSource` (Hive-based) and `TransactionRepositoryImpl` (Firestore) components, adding a coordinating `CloudSyncService` that manages the sync lifecycle.
 
@@ -53,6 +68,12 @@ flowchart TB
 ### 1. CloudSyncService
 
 The central coordinator for all sync operations. Manages sync triggers, queue processing, and status reporting.
+
+**CRITICAL CONSTRAINTS:**
+- MUST only upload transactions where `syncedToFirestore == false`
+- MUST NOT delete local transactions after successful upload
+- MUST NOT pull or overwrite local data from Firestore
+- MUST NOT trigger UI refresh on sync completion
 
 ```dart
 /// Service responsible for coordinating transaction sync between local storage and Firestore

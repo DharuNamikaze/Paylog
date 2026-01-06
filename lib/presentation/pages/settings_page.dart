@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/services/background_sms_service.dart';
 
 /// Settings page for PayLog app configuration
@@ -65,7 +66,7 @@ class _SettingsPageState extends State<SettingsPage> {
               content: Text(enabled 
                 ? 'Background monitoring started' 
                 : 'Background monitoring stopped'),
-              backgroundColor: Colors.green,
+              backgroundColor: AppTheme.successGreen,
             ),
           );
         }
@@ -74,7 +75,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to ${enabled ? 'start' : 'stop'} background monitoring'),
-              backgroundColor: Colors.red,
+              backgroundColor: AppTheme.errorRed,
             ),
           );
         }
@@ -85,7 +86,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.errorRed,
           ),
         );
       }
@@ -117,7 +118,7 @@ class _SettingsPageState extends State<SettingsPage> {
               content: Text(isIgnored 
                 ? 'Battery optimization disabled successfully' 
                 : 'Battery optimization request completed'),
-              backgroundColor: Colors.green,
+              backgroundColor: AppTheme.successGreen,
             ),
           );
         }
@@ -128,7 +129,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error requesting battery optimization: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.errorRed,
           ),
         );
       }
@@ -148,7 +149,7 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.phone_android, color: Colors.blue),
+            const Icon(Icons.phone_android, color: AppTheme.primaryBlue),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -166,13 +167,13 @@ class _SettingsPageState extends State<SettingsPage> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
+                  color: AppTheme.warningOrange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.shade200),
+                  border: Border.all(color: AppTheme.warningOrange.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.warning_amber, color: Colors.orange.shade700),
+                    Icon(Icons.warning_amber, color: AppTheme.warningOrange),
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
@@ -206,7 +207,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: Theme.of(context).colorScheme.primary,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -243,7 +244,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           onChanged: _toggleBackgroundMonitoring,
                           secondary: Icon(
                             _backgroundMonitoringEnabled ? Icons.play_circle : Icons.pause_circle,
-                            color: _backgroundMonitoringEnabled ? Colors.green : Colors.grey,
+                            color: _backgroundMonitoringEnabled ? AppTheme.successGreen : Colors.grey,
                           ),
                         ),
                         if (_backgroundMonitoringEnabled) ...[
@@ -251,14 +252,14 @@ class _SettingsPageState extends State<SettingsPage> {
                           ListTile(
                             leading: Icon(
                               _batteryOptimizationIgnored ? Icons.battery_full : Icons.battery_alert,
-                              color: _batteryOptimizationIgnored ? Colors.green : Colors.orange,
+                              color: _batteryOptimizationIgnored ? AppTheme.successGreen : AppTheme.warningOrange,
                             ),
                             title: const Text('Battery Optimization'),
                             subtitle: Text(_batteryOptimizationIgnored 
                               ? 'Disabled - background monitoring protected'
                               : 'Enabled - may affect background monitoring'),
                             trailing: _batteryOptimizationIgnored 
-                              ? const Icon(Icons.check_circle, color: Colors.green)
+                              ? const Icon(Icons.check_circle, color: AppTheme.successGreen)
                               : ElevatedButton(
                                   onPressed: _requestBatteryOptimization,
                                   child: const Text('Disable'),
@@ -268,7 +269,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           if (_deviceInfo != null) ...[
                             const Divider(),
                             ListTile(
-                              leading: const Icon(Icons.phone_android, color: Colors.blue),
+                              leading: const Icon(Icons.phone_android, color: AppTheme.primaryBlue),
                               title: Text('${_deviceInfo!.manufacturer} Device'),
                               subtitle: const Text('View device-specific settings for reliable monitoring'),
                               trailing: TextButton.icon(

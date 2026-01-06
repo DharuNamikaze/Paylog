@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../presentation/pages/dashboard_page.dart';
 import '../../presentation/pages/transaction_detail_page.dart';
 import '../../presentation/pages/manual_input_page.dart';
+import '../../core/theme/app_theme.dart';
 import '../../domain/entities/transaction.dart';
 
 /// Application route names
@@ -73,7 +74,7 @@ class AppRouteGenerator {
               const Icon(
                 Icons.error_outline,
                 size: 64,
-                color: Colors.red,
+                color: AppTheme.errorRed,
               ),
               const SizedBox(height: 16),
               Text(

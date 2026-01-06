@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/transaction.dart';
 import '../../domain/entities/transaction_type.dart';
+import '../../core/theme/app_theme.dart';
 import '../bloc/transaction_bloc.dart';
 import '../bloc/sms_bloc.dart';
 import '../bloc/sync_bloc.dart';
@@ -99,7 +100,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     child: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: const BoxDecoration(
-                        color: Colors.orange,
+                        color: AppTheme.warningOrange,
                         shape: BoxShape.circle,
                       ),
                       constraints: const BoxConstraints(
@@ -150,11 +151,11 @@ class _DashboardPageState extends State<DashboardPage> {
   /// Get sync icon color based on state
   Color _getSyncIconColor(SyncBlocState state) {
     if (state is SyncComplete) {
-      return Colors.green;
+      return AppTheme.successGreen;
     } else if (state is SyncPending) {
-      return Colors.orange;
+      return AppTheme.warningOrange;
     } else if (state is SyncError) {
-      return Colors.red;
+      return AppTheme.errorRed;
     } else if (state is SyncOffline) {
       return Colors.grey;
     }
@@ -205,15 +206,15 @@ class _DashboardPageState extends State<DashboardPage> {
     
     if (hasSuccess && !hasFailure) {
       message = 'Synced $successCount transaction${successCount == 1 ? '' : 's'}';
-      backgroundColor = Colors.green;
+      backgroundColor = AppTheme.successGreen;
       icon = Icons.cloud_done;
     } else if (hasFailure && !hasSuccess) {
       message = errorMessage ?? 'Failed to sync $failureCount transaction${failureCount == 1 ? '' : 's'}';
-      backgroundColor = Colors.red;
+      backgroundColor = AppTheme.errorRed;
       icon = Icons.cloud_off;
     } else if (hasSuccess && hasFailure) {
       message = 'Synced $successCount, failed $failureCount';
-      backgroundColor = Colors.orange;
+      backgroundColor = AppTheme.warningOrange;
       icon = Icons.cloud_sync;
     } else {
       // No changes
@@ -262,7 +263,7 @@ class _DashboardPageState extends State<DashboardPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('PayLog'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: Theme.of(context).colorScheme.primary,
         actions: [
           // Sync status indicator with manual sync button
           _buildSyncButton(),
@@ -536,14 +537,14 @@ class _DashboardPageState extends State<DashboardPage> {
                   children: [
                     const Icon(
                       Icons.sms_failed,
-                      color: Colors.orange,
+                      color: AppTheme.warningOrange,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'SMS Monitoring Unavailable',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: Colors.orange,
+                        color: AppTheme.warningOrange,
                       ),
                     ),
                   ],
@@ -555,14 +556,14 @@ class _DashboardPageState extends State<DashboardPage> {
                     const Icon(
                       Icons.info_outline,
                       size: 16,
-                      color: Colors.orange,
+                      color: AppTheme.warningOrange,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'SMS monitoring service is not available. You can still add transactions manually using the button below.',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.orange.shade700,
+                          color: AppTheme.warningOrange,
                         ),
                       ),
                     ),
@@ -583,15 +584,15 @@ class _DashboardPageState extends State<DashboardPage> {
     String tooltip;
 
     if (state is SmsListening) {
-      color = Colors.green;
+      color = AppTheme.successGreen;
       icon = Icons.radio_button_checked;
       tooltip = 'SMS monitoring is active';
     } else if (state is SmsPermissionDenied) {
-      color = Colors.orange;
+      color = AppTheme.warningOrange;
       icon = Icons.warning;
       tooltip = 'SMS permissions required';
     } else if (state is SmsError) {
-      color = Colors.red;
+      color = AppTheme.errorRed;
       icon = Icons.error;
       tooltip = 'SMS monitoring error';
     } else {
@@ -625,15 +626,15 @@ class _DashboardPageState extends State<DashboardPage> {
 
     if (state is SmsListening) {
       message = 'Monitoring SMS messages for financial transactions';
-      textColor = Colors.green.shade700;
+      textColor = AppTheme.successGreen;
       messageIcon = Icons.check_circle_outline;
     } else if (state is SmsPermissionDenied) {
       message = state.message;
-      textColor = Colors.orange.shade700;
+      textColor = AppTheme.warningOrange;
       messageIcon = Icons.warning_amber;
     } else if (state is SmsError) {
       message = state.error;
-      textColor = Colors.red.shade700;
+      textColor = AppTheme.errorRed;
       messageIcon = Icons.error_outline;
     } else {
       message = 'SMS monitoring is stopped. Start monitoring to automatically detect transaction messages.';
@@ -678,8 +679,8 @@ class _DashboardPageState extends State<DashboardPage> {
             icon: const Icon(Icons.stop),
             label: const Text('Stop Monitoring'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade100,
-              foregroundColor: Colors.red.shade700,
+              backgroundColor: AppTheme.errorRed.withValues(alpha: 0.1),
+              foregroundColor: AppTheme.errorRed,
             ),
           ),
         ] else if (state is SmsPermissionDenied) ...[
@@ -694,8 +695,8 @@ class _DashboardPageState extends State<DashboardPage> {
             icon: const Icon(Icons.security),
             label: const Text('Grant Permissions'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange.shade100,
-              foregroundColor: Colors.orange.shade700,
+              backgroundColor: AppTheme.warningOrange.withValues(alpha: 0.1),
+              foregroundColor: AppTheme.warningOrange,
             ),
           ),
           const SizedBox(width: 8),
@@ -736,8 +737,8 @@ class _DashboardPageState extends State<DashboardPage> {
             icon: const Icon(Icons.play_arrow),
             label: const Text('Start Monitoring'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade100,
-              foregroundColor: Colors.green.shade700,
+              backgroundColor: AppTheme.successGreen.withValues(alpha: 0.1),
+              foregroundColor: AppTheme.successGreen,
             ),
           ),
         ],
@@ -1100,7 +1101,7 @@ class TransactionCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: 0.1),
+                        color: AppTheme.warningOrange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -1109,13 +1110,13 @@ class TransactionCard extends StatelessWidget {
                           const Icon(
                             Icons.warning_amber,
                             size: 12,
-                            color: Colors.orange,
+                            color: AppTheme.warningOrange,
                           ),
                           const SizedBox(width: 2),
                           Text(
                             'Low confidence',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: Colors.orange,
+                              color: AppTheme.warningOrange,
                             ),
                           ),
                         ],
@@ -1147,9 +1148,9 @@ class TransactionCard extends StatelessWidget {
     final theme = Theme.of(context);
     switch (transaction.transactionType) {
       case TransactionType.debit:
-        return Colors.red;
+        return AppTheme.errorRed;
       case TransactionType.credit:
-        return Colors.green;
+        return AppTheme.successGreen;
       case TransactionType.unknown:
         return theme.colorScheme.onSurfaceVariant;
     }

@@ -4,7 +4,32 @@
 
 This implementation plan breaks down the cloud transaction sync feature into discrete, incremental tasks. Each task builds on previous work and references specific requirements and correctness properties from the design document. The implementation follows the documented sync state machine and uses Dart/Flutter with Firebase.
 
+**PRODUCTION-LOCKED PIPELINE RULES:**
+- Local storage is source of truth - UI reads ONLY from local DB
+- Firestore is backup/mirror only - never primary store for UI
+- Sync is upload-only - never pulls or deletes local data
+- UI shows ALL local transactions regardless of sync status
+- Sync completion does NOT refresh or clear UI
+
 ## Tasks
+
+- [x] 0. Audit and enforce offline-first pipeline rules
+  - [x] 0.1 Audit repository to ensure getTransactions() reads ONLY from local storage
+    - Verify `LocalTransactionRepository.getTransactions()` reads from Hive only
+    - Ensure NO Firestore reads in transaction list retrieval
+    - _Requirements: 1.1, 1.2_
+  - [x] 0.2 Ensure CloudSyncService uploads without deleting or moving local records
+    - Verify `syncedToFirestore = true` update does NOT delete transaction
+    - Verify no `delete()` calls on local storage after sync
+    - _Requirements: 1.4, 1.5, 2.6_
+  - [x] 0.3 Verify hash-based deduplication remains intact
+    - Confirm transaction hash used as Firestore document ID
+    - Confirm `set(..., SetOptions(merge: true))` for upserts
+    - _Requirements: 8.1, 8.2, 8.3_
+  - [x] 0.4 Confirm manual sync is idempotent and does not alter UI state
+    - Verify manual sync only uploads, no UI side effects
+    - Verify sync result display doesn't clear transaction list
+    - _Requirements: 5.4, 5.5_
 
 - [x] 1. Set up project structure and utilities
   - [x] 1.1 Create transaction hash utility
@@ -289,3 +314,13 @@ This implementation plan breaks down the cloud transaction sync feature into dis
 - Checkpoints ensure incremental validation before proceeding
 - Implementation must strictly follow the documented sync state machine transitions
 - All Firestore writes must use `set(..., SetOptions(merge: true))` for upsert behavior
+
+## Production-Locked Rules (NON-NEGOTIABLE)
+
+1. **Local storage is source of truth** - `getTransactions()` reads ONLY from Hive
+2. **UI never depends on Firestore** - No Firestore reads for UI display
+3. **Sync is upload-only** - Never pull or overwrite local data
+4. **Local data retained indefinitely** - No auto-cleanup after sync
+5. **Sync completion doesn't affect UI** - No refresh/clear on sync done
+6. **Firestore failures don't affect UI** - Transactions always visible locally
+7. **Hash-based deduplication** - Idempotent writes to Firestore

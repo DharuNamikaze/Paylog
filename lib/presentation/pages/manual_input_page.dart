@@ -5,6 +5,7 @@ import '../../domain/entities/transaction.dart';
 import '../../domain/entities/transaction_type.dart';
 import '../../domain/usecases/parse_sms_transaction.dart';
 import '../../domain/usecases/validate_transaction.dart';
+import '../../core/theme/app_theme.dart';
 import '../bloc/transaction_bloc.dart';
 import '../../core/routes/app_routes.dart';
 
@@ -50,7 +51,7 @@ class _ManualInputPageState extends State<ManualInputPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manual SMS Entry'),
-        backgroundColor: theme.colorScheme.inversePrimary,
+        backgroundColor: theme.colorScheme.primary,
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline),
@@ -313,14 +314,14 @@ class _ManualInputPageState extends State<ManualInputPage> {
         // Success message
         if (_successMessage != null)
           Card(
-            color: Colors.green.withValues(alpha: 0.1),
+            color: AppTheme.successGreen.withValues(alpha: 0.1),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
                 children: [
                   const Icon(
                     Icons.check_circle_outline,
-                    color: Colors.green,
+                    color: AppTheme.successGreen,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -330,7 +331,7 @@ class _ManualInputPageState extends State<ManualInputPage> {
                         Text(
                           'Transaction Saved Successfully',
                           style: theme.textTheme.titleSmall?.copyWith(
-                            color: Colors.green,
+                            color: AppTheme.successGreen,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -338,7 +339,7 @@ class _ManualInputPageState extends State<ManualInputPage> {
                         Text(
                           _successMessage!,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: Colors.green.shade700,
+                            color: AppTheme.successGreen,
                           ),
                         ),
                       ],
@@ -576,7 +577,7 @@ class _ManualInputPageState extends State<ManualInputPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Transaction saved successfully'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.successGreen,
             duration: Duration(seconds: 3),
           ),
         );
