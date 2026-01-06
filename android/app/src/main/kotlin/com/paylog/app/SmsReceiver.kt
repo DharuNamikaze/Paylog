@@ -7,8 +7,19 @@ import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
 import io.flutter.plugin.common.EventChannel
-import io.flutter.plugin.common.MethodChannel
 
+/**
+ * SMS BroadcastReceiver with Queue-First Design.
+ * 
+ * ALL SMS messages are ALWAYS queued to SQLite first, then Flutter is notified.
+ * This ensures no messages are lost even when Flutter is not running.
+ * 
+ * Flow:
+ * 1. SMS arrives → Extract data
+ * 2. Queue to SQLite (with dedup hash)
+ * 3. If Flutter available → Notify "new_sms_queued"
+ * 4. Flutter reads from queue when ready
+ */
 class SmsReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "SmsReceiver"
@@ -29,6 +40,14 @@ class SmsReceiver : BroadcastReceiver() {
         @Volatile
         var smsReceivedCount = 0
         
+        // Counter for queued SMS messages
+        @Volatile
+        var smsQueuedCount = 0
+        
+        // Counter for duplicate SMS messages (rejected)
+        @Volatile
+        var smsDuplicateCount = 0
+        
         /**
          * Static method to get receiver status without instantiation
          */
@@ -38,6 +57,8 @@ class SmsReceiver : BroadcastReceiver() {
                 "receiverPackage" to (SmsReceiver::class.java.`package`?.name ?: "unknown"),
                 "isReceiverRegistered" to isReceiverRegistered,
                 "smsReceivedCount" to smsReceivedCount,
+                "smsQueuedCount" to smsQueuedCount,
+                "smsDuplicateCount" to smsDuplicateCount,
                 "lastSmsProcessedAt" to lastSmsProcessedAt,
                 "eventSinkAvailable" to (eventSink != null),
                 "debugEnabled" to DEBUG_ENABLED
@@ -61,114 +82,45 @@ class SmsReceiver : BroadcastReceiver() {
         
         // Enhanced debug logging for receiver registration verification
         if (DEBUG_ENABLED) {
-            Log.d(TAG, "=== SMS BROADCAST RECEIVER DEBUG ===")
+            Log.d(TAG, "=== SMS BROADCAST RECEIVER DEBUG (Queue-First) ===")
             Log.d(TAG, "Receiver class: ${this.javaClass.name}")
-            Log.d(TAG, "Receiver package: ${this.javaClass.`package`?.name}")
-            Log.d(TAG, "SMS count: $smsReceivedCount")
+            Log.d(TAG, "SMS count: $smsReceivedCount, Queued: $smsQueuedCount, Duplicates: $smsDuplicateCount")
             Log.d(TAG, "Intent action: ${intent?.action}")
-            Log.d(TAG, "Intent extras: ${intent?.extras?.keySet()?.joinToString(", ")}")
             Log.d(TAG, "Context available: ${context != null}")
-            Log.d(TAG, "Context package: ${context?.packageName}")
             Log.d(TAG, "EventSink available: ${eventSink != null}")
-            Log.d(TAG, "Processing started at: $startTime")
         }
         
-        Log.i(TAG, "SMS broadcast received (#$smsReceivedCount) with action: ${intent?.action} at $startTime")
+        Log.i(TAG, "SMS broadcast received (#$smsReceivedCount) - using queue-first design")
         
-        // Log background operation status
-        val appContext = context?.applicationContext
-        if (appContext != null) {
-            Log.d(TAG, "SMS processing in background - app context available (package: ${appContext.packageName})")
-        } else {
-            Log.w(TAG, "SMS processing without app context - this may indicate registration issues")
+        // Verify context is available
+        if (context == null) {
+            Log.e(TAG, "Context is null - cannot process SMS")
+            return
         }
         
         // Verify SMS_RECEIVED intent filtering
         if (intent?.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
             Log.w(TAG, "Received non-SMS intent action: ${intent?.action}")
-            Log.w(TAG, "Expected action: ${Telephony.Sms.Intents.SMS_RECEIVED_ACTION}")
-            if (DEBUG_ENABLED) {
-                Log.d(TAG, "Intent categories: ${intent?.categories?.joinToString(", ") ?: "none"}")
-                Log.d(TAG, "Intent data: ${intent?.data}")
-                Log.d(TAG, "Intent type: ${intent?.type}")
-            }
             return
         }
         
-        Log.i(TAG, "SMS_RECEIVED intent confirmed - proceeding with SMS processing")
+        Log.i(TAG, "SMS_RECEIVED intent confirmed - proceeding with queue-first processing")
 
         try {
-            // Enhanced SMS extraction debugging
+            // Extract SMS messages from intent
             val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
             if (messages.isEmpty()) {
-                Log.w(TAG, "No SMS messages found in intent - this may indicate intent parsing issues")
-                if (DEBUG_ENABLED) {
-                    Log.d(TAG, "Intent extras for debugging:")
-                    intent?.extras?.let { extras ->
-                        for (key in extras.keySet()) {
-                            Log.d(TAG, "  $key: ${extras.get(key)}")
-                        }
-                    }
-                }
+                Log.w(TAG, "No SMS messages found in intent")
                 return
             }
 
-            Log.i(TAG, "Successfully extracted ${messages.size} SMS message(s) from intent")
-            if (DEBUG_ENABLED) {
-                Log.d(TAG, "Message extraction successful - SMS parsing working correctly")
-            }
+            Log.i(TAG, "Extracted ${messages.size} SMS message(s) from intent")
+            
+            // Initialize queue manager
+            val queueManager = SmsQueueManager(context)
 
             for (message in messages) {
-                val messageStartTime = System.currentTimeMillis()
-                val smsData = createValidatedSmsData(message)
-                
-                if (smsData != null) {
-                    Log.i(TAG, "SMS received from: ${smsData["sender"]}")
-                    Log.i(TAG, "SMS content preview: ${truncateContent(smsData["content"] as String)}")
-                    Log.d(TAG, "SMS timestamp: ${smsData["timestamp"]}")
-                    
-                    if (DEBUG_ENABLED) {
-                        Log.d(TAG, "SMS data validation successful:")
-                        Log.d(TAG, "  - Sender: ${smsData["sender"]}")
-                        Log.d(TAG, "  - Content length: ${(smsData["content"] as String).length}")
-                        Log.d(TAG, "  - Timestamp: ${smsData["timestamp"]}")
-                        Log.d(TAG, "  - Thread ID: ${smsData["threadId"]}")
-                        Log.d(TAG, "  - Received at: ${smsData["receivedAt"]}")
-                    }
-
-                    // Send to Flutter via EventChannel
-                    val sink = eventSink
-                    if (sink != null) {
-                        try {
-                            sink.success(smsData)
-                            val processingTime = System.currentTimeMillis() - messageStartTime
-                            Log.i(TAG, "SMS data sent to Flutter successfully in ${processingTime}ms")
-                            
-                            if (DEBUG_ENABLED) {
-                                Log.d(TAG, "Platform channel communication successful")
-                                Log.d(TAG, "EventSink.success() completed without errors")
-                            }
-                            
-                            // Log performance warning if processing takes too long
-                            if (processingTime > 500) {
-                                Log.w(TAG, "SMS processing took longer than expected: ${processingTime}ms (target: <500ms)")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error sending SMS data to Flutter via EventChannel: ${e.message}", e)
-                        }
-                    } else {
-                        Log.w(TAG, "EventChannel sink not available - SMS data cannot be sent to Flutter")
-                        Log.w(TAG, "This indicates platform channel is not properly connected")
-                        if (DEBUG_ENABLED) {
-                            Log.d(TAG, "EventSink is null - check if Flutter EventChannel is listening")
-                        }
-                    }
-                } else {
-                    Log.w(TAG, "SMS data validation failed, skipping message")
-                    if (DEBUG_ENABLED) {
-                        Log.d(TAG, "SMS validation failed - check createValidatedSmsData() method")
-                    }
-                }
+                processAndQueueMessage(message, queueManager)
             }
             
             val totalTime = System.currentTimeMillis() - startTime
@@ -176,53 +128,91 @@ class SmsReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             val errorTime = System.currentTimeMillis() - startTime
             Log.e(TAG, "Error processing SMS after ${errorTime}ms: ${e.message}", e)
-            eventSink?.error("SMS_PROCESSING_ERROR", 
-                "Error processing SMS: ${e.message}", 
-                mapOf("error" to e.toString(), "timestamp" to System.currentTimeMillis(), "processingTime" to errorTime))
         }
     }
     
-    private fun createValidatedSmsData(message: SmsMessage): Map<String, Any>? {
+    /**
+     * Process a single SMS message using queue-first design.
+     * 
+     * 1. Validate and extract SMS data
+     * 2. ALWAYS queue to SQLite first
+     * 3. Notify Flutter if available
+     */
+    private fun processAndQueueMessage(message: SmsMessage, queueManager: SmsQueueManager) {
+        val messageStartTime = System.currentTimeMillis()
+        
         try {
             // Extract and validate sender
             val sender = message.originatingAddress?.trim()
             if (sender.isNullOrEmpty()) {
-                Log.w(TAG, "SMS sender is null or empty")
-                return null
+                Log.w(TAG, "SMS sender is null or empty - skipping")
+                return
             }
-
-            // Extract and validate content
+            
+            // Extract content
             val content = message.messageBody?.trim() ?: ""
-            if (content.isEmpty()) {
-                Log.w(TAG, "SMS content is empty")
-                // Still process empty messages as they might be valid system messages
+            
+            // Get timestamp
+            val timestamp = if (message.timestampMillis > 0) {
+                message.timestampMillis
+            } else {
+                System.currentTimeMillis()
             }
-
-            // Validate timestamp
-            val timestamp = message.timestampMillis
-            if (timestamp <= 0) {
-                Log.w(TAG, "Invalid SMS timestamp: $timestamp")
-                // Use current time as fallback
-                return createSmsDataMap(sender, content, System.currentTimeMillis())
+            
+            Log.i(TAG, "Processing SMS from: $sender")
+            Log.d(TAG, "SMS content preview: ${truncateContent(content)}")
+            
+            // ========================================
+            // QUEUE-FIRST: Always queue to SQLite first
+            // ========================================
+            val wasQueued = queueManager.queueSms(sender, content, timestamp)
+            
+            if (!wasQueued) {
+                // Duplicate detected via hash - skip
+                smsDuplicateCount++
+                Log.d(TAG, "Duplicate SMS detected (hash exists) - skipping notification")
+                return
             }
-
-            return createSmsDataMap(sender, content, timestamp)
+            
+            smsQueuedCount++
+            Log.i(TAG, "SMS queued successfully (#$smsQueuedCount)")
+            
+            // ========================================
+            // Notify Flutter if available
+            // ========================================
+            val sink = eventSink
+            if (sink != null) {
+                try {
+                    // Send notification that new SMS is queued (not the full SMS data)
+                    // Flutter will read from the queue
+                    val notification = mapOf(
+                        "type" to "new_sms_queued",
+                        "sender" to sender,
+                        "timestamp" to timestamp,
+                        "queuedAt" to System.currentTimeMillis()
+                    )
+                    
+                    sink.success(notification)
+                    
+                    val processingTime = System.currentTimeMillis() - messageStartTime
+                    Log.i(TAG, "Flutter notified of new queued SMS in ${processingTime}ms")
+                    
+                    if (processingTime > 500) {
+                        Log.w(TAG, "SMS processing took longer than expected: ${processingTime}ms (target: <500ms)")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error notifying Flutter: ${e.message}", e)
+                    // Message is still queued - Flutter will get it when it reads the queue
+                }
+            } else {
+                Log.d(TAG, "Flutter not available - SMS queued for later processing")
+                if (DEBUG_ENABLED) {
+                    Log.d(TAG, "EventSink is null - message will be processed when app opens")
+                }
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error validating SMS data: ${e.message}", e)
-            return null
+            Log.e(TAG, "Error processing SMS message: ${e.message}", e)
         }
-    }
-    
-    private fun createSmsDataMap(sender: String, content: String, timestamp: Long): Map<String, Any> {
-        val dataMap = mutableMapOf<String, Any>()
-        dataMap["sender"] = sender
-        dataMap["content"] = content
-        dataMap["timestamp"] = timestamp
-        dataMap["threadId"] = "null" // Use string "null" instead of null
-        dataMap["receivedAt"] = System.currentTimeMillis()
-        dataMap["contentLength"] = content.length
-        dataMap["isValidData"] = true
-        return dataMap
     }
     
     private fun truncateContent(content: String, maxLength: Int = 50): String {
@@ -243,6 +233,8 @@ class SmsReceiver : BroadcastReceiver() {
             "receiverPackage" to (this.javaClass.`package`?.name ?: "unknown"),
             "isReceiverRegistered" to isReceiverRegistered,
             "smsReceivedCount" to smsReceivedCount,
+            "smsQueuedCount" to smsQueuedCount,
+            "smsDuplicateCount" to smsDuplicateCount,
             "lastSmsProcessedAt" to lastSmsProcessedAt,
             "eventSinkAvailable" to (eventSink != null),
             "debugEnabled" to DEBUG_ENABLED

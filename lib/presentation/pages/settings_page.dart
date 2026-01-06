@@ -13,6 +13,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _backgroundMonitoringEnabled = false;
   bool _batteryOptimizationIgnored = false;
   bool _isLoading = true;
+  DeviceInfo? _deviceInfo;
 
   @override
   void initState() {
@@ -24,10 +25,12 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final backgroundActive = await BackgroundSmsService.isBackgroundMonitoringActive();
       final batteryOptimized = await BackgroundSmsService.isBatteryOptimizationIgnored();
+      final deviceInfo = await BackgroundSmsService.getDeviceInfo();
       
       setState(() {
         _backgroundMonitoringEnabled = backgroundActive;
         _batteryOptimizationIgnored = batteryOptimized;
+        _deviceInfo = deviceInfo;
         _isLoading = false;
       });
     } catch (e) {
@@ -136,6 +139,68 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  void _showDeviceSpecificGuidance() {
+    final instructions = _deviceInfo?.getBatteryOptimizationInstructions();
+    if (instructions == null) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.phone_android, color: Colors.blue),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${_deviceInfo?.manufacturer ?? "Device"} Settings',
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber, color: Colors.orange.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Additional steps may be required for reliable background monitoring.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                instructions,
+                style: const TextStyle(height: 1.6),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -199,6 +264,20 @@ class _SettingsPageState extends State<SettingsPage> {
                                   child: const Text('Disable'),
                                 ),
                           ),
+                          // Device-specific guidance
+                          if (_deviceInfo != null) ...[
+                            const Divider(),
+                            ListTile(
+                              leading: const Icon(Icons.phone_android, color: Colors.blue),
+                              title: Text('${_deviceInfo!.manufacturer} Device'),
+                              subtitle: const Text('View device-specific settings for reliable monitoring'),
+                              trailing: TextButton.icon(
+                                onPressed: _showDeviceSpecificGuidance,
+                                icon: const Icon(Icons.help_outline, size: 18),
+                                label: const Text('Guide'),
+                              ),
+                            ),
+                          ],
                         ],
                       ],
                     ),

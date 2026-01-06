@@ -118,6 +118,120 @@ class SmsListenerService {
     }
   }
   
+  /// Process any queued SMS messages from native storage.
+  /// 
+  /// This should be called when the app starts to process messages
+  /// that were received while Flutter was not running.
+  Future<int> processQueuedMessages() async {
+    if (_currentUserId == null) {
+      developer.log(
+        'Cannot process queued messages: no user ID set',
+        name: 'SmsListenerService',
+      );
+      return 0;
+    }
+    
+    try {
+      developer.log('Processing queued SMS messages', name: 'SmsListenerService');
+      print('🟠 [SmsListenerService] Checking for queued SMS messages...');
+      
+      // Get unprocessed messages from native queue
+      final queuedMessages = await _smsChannel.getUnprocessedSms();
+      
+      if (queuedMessages.isEmpty) {
+        developer.log('No queued SMS messages to process', name: 'SmsListenerService');
+        print('🟠 [SmsListenerService] No queued messages found');
+        return 0;
+      }
+      
+      developer.log(
+        'Found ${queuedMessages.length} queued SMS messages to process',
+        name: 'SmsListenerService',
+      );
+      print('🟠 [SmsListenerService] Found ${queuedMessages.length} queued messages');
+      
+      int processedCount = 0;
+      
+      for (final queuedSms in queuedMessages) {
+        try {
+          // Convert to domain SmsMessage
+          final domainSmsMessage = SmsMessage(
+            sender: queuedSms.sender,
+            content: queuedSms.content,
+            timestamp: queuedSms.timestamp,
+            threadId: null,
+          );
+          
+          print('🟠 [SmsListenerService] Processing queued SMS from: ${queuedSms.sender}');
+          
+          // Process through the normal pipeline
+          await _processSmsMessage(domainSmsMessage);
+          
+          // Mark as processed in native queue
+          await _smsChannel.markSmsAsProcessed(queuedSms.id);
+          
+          processedCount++;
+          print('✅ [SmsListenerService] Queued SMS processed and marked: ${queuedSms.id}');
+        } catch (e) {
+          developer.log(
+            'Error processing queued SMS ${queuedSms.id}: $e',
+            name: 'SmsListenerService',
+            error: e,
+          );
+          print('❌ [SmsListenerService] Error processing queued SMS: $e');
+          // Continue processing remaining messages
+        }
+      }
+      
+      developer.log(
+        'Processed $processedCount of ${queuedMessages.length} queued SMS messages',
+        name: 'SmsListenerService',
+      );
+      print('🟠 [SmsListenerService] Processed $processedCount queued messages');
+      
+      _eventController.add(SmsListenerEvent.queueProcessed(processedCount, queuedMessages.length));
+      
+      return processedCount;
+    } catch (e, stackTrace) {
+      developer.log(
+        'Error processing queued messages: $e',
+        name: 'SmsListenerService',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      print('❌ [SmsListenerService] Error processing queued messages: $e');
+      return 0;
+    }
+  }
+  
+  /// Get queue statistics for monitoring.
+  Future<platform.QueueStats> getQueueStats() async {
+    try {
+      return await _smsChannel.getQueueStats();
+    } catch (e) {
+      developer.log(
+        'Error getting queue stats: $e',
+        name: 'SmsListenerService',
+        error: e,
+      );
+      return platform.QueueStats.empty();
+    }
+  }
+  
+  /// Perform queue cleanup.
+  Future<Map<String, int>> cleanupQueue() async {
+    try {
+      return await _smsChannel.cleanupQueue();
+    } catch (e) {
+      developer.log(
+        'Error cleaning up queue: $e',
+        name: 'SmsListenerService',
+        error: e,
+      );
+      return {};
+    }
+  }
+  
   /// Start listening for SMS messages
   /// 
   /// [userId] is required to associate transactions with a user
@@ -147,16 +261,8 @@ class SmsListenerService {
       print('🟠 [SmsListenerService] Subscribing to SMS stream...');
       _smsSubscription = _smsChannel.smsStream.listen(
         (platformSmsMessage) {
-          print('🟠 [SmsListenerService] SMS received from platform channel: ${platformSmsMessage.sender}');
-          // Convert platform SmsMessage to domain SmsMessage
-          final domainSmsMessage = SmsMessage(
-            sender: platformSmsMessage.sender,
-            content: platformSmsMessage.content,
-            timestamp: platformSmsMessage.timestamp,
-            threadId: platformSmsMessage.threadId,
-          );
-          print('🟠 [SmsListenerService] Processing SMS message...');
-          _processSmsMessage(domainSmsMessage);
+          print('🟠 [SmsListenerService] SMS event received from platform channel');
+          _handleSmsEvent(platformSmsMessage);
         },
         onError: (error) {
           print('❌ [SmsListenerService] SMS stream error: $error');
@@ -179,6 +285,11 @@ class SmsListenerService {
         'SMS Listener Service started for user: $userId',
         name: 'SmsListenerService',
       );
+      
+      // Process any queued messages from when app was closed
+      print('🟠 [SmsListenerService] Processing queued messages on startup...');
+      await processQueuedMessages();
+      
     } catch (e, stackTrace) {
       _currentUserId = null;
       _isListening = false;
@@ -197,6 +308,31 @@ class SmsListenerService {
         details: e,
       );
     }
+  }
+  
+  /// Handle SMS event from platform channel.
+  /// 
+  /// This handles both direct SMS data and "new_sms_queued" notifications.
+  void _handleSmsEvent(platform.SmsMessage platformSmsMessage) {
+    // Check if this is a "new_sms_queued" notification
+    // The native side now sends notifications instead of full SMS data
+    if (platformSmsMessage.content.isEmpty && platformSmsMessage.sender.isNotEmpty) {
+      // This might be a notification - process queued messages
+      print('🟠 [SmsListenerService] Received notification - processing queued messages');
+      processQueuedMessages();
+      return;
+    }
+    
+    // Convert platform SmsMessage to domain SmsMessage
+    final domainSmsMessage = SmsMessage(
+      sender: platformSmsMessage.sender,
+      content: platformSmsMessage.content,
+      timestamp: platformSmsMessage.timestamp,
+      threadId: platformSmsMessage.threadId,
+    );
+    
+    print('🟠 [SmsListenerService] Processing SMS message from: ${domainSmsMessage.sender}');
+    _processSmsMessage(domainSmsMessage);
   }
   
   /// Stop listening for SMS messages
@@ -538,6 +674,7 @@ abstract class SmsListenerEvent {
   factory SmsListenerEvent.validationFailed(SmsMessage sms, ParsedTransaction transaction, List<String> errors) = _ValidationFailed;
   factory SmsListenerEvent.transactionSaved(SmsMessage sms, ParsedTransaction transaction, String transactionId) = _TransactionSaved;
   factory SmsListenerEvent.processingError(SmsMessage sms, String error) = _ProcessingError;
+  factory SmsListenerEvent.queueProcessed(int processedCount, int totalCount) = _QueueProcessed;
 }
 
 class _ServiceStarted extends SmsListenerEvent {
@@ -632,4 +769,13 @@ class _ProcessingError extends SmsListenerEvent {
   
   @override
   String toString() => 'ProcessingError(sender: ${sms.sender}, error: $error)';
+}
+
+class _QueueProcessed extends SmsListenerEvent {
+  final int processedCount;
+  final int totalCount;
+  const _QueueProcessed(this.processedCount, this.totalCount);
+  
+  @override
+  String toString() => 'QueueProcessed(processed: $processedCount, total: $totalCount)';
 }

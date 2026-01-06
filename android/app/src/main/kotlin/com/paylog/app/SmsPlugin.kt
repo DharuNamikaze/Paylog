@@ -101,6 +101,12 @@ class SmsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.S
                 "isBackgroundServiceRunning" -> isBackgroundServiceRunning(result)
                 "requestBatteryOptimizationExemption" -> requestBatteryOptimizationExemption(result)
                 "isBatteryOptimizationIgnored" -> isBatteryOptimizationIgnored(result)
+                // Queue management methods
+                "getUnprocessedSms" -> getUnprocessedSms(result)
+                "markSmsAsProcessed" -> markSmsAsProcessed(call, result)
+                "getQueueStats" -> getQueueStats(result)
+                "cleanupQueue" -> cleanupQueue(result)
+                "getDeviceManufacturer" -> getDeviceManufacturer(result)
                 else -> {
                     Log.w(TAG, "Unknown method call: ${call.method}")
                     result.notImplemented()
@@ -617,6 +623,145 @@ class SmsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.S
         } catch (e: Exception) {
             Log.e(TAG, "Error checking battery optimization status: ${e.message}", e)
             result.error("BATTERY_CHECK_ERROR", "Error checking battery optimization status: ${e.message}", e.toString())
+        }
+    }
+    
+    // ========================================
+    // Queue Management Methods
+    // ========================================
+    
+    /**
+     * Get all unprocessed SMS messages from the queue.
+     * Called by Flutter to process queued messages.
+     */
+    private fun getUnprocessedSms(result: MethodChannel.Result) {
+        try {
+            Log.d(TAG, "Getting unprocessed SMS from queue")
+            val context = this.context
+            if (context == null) {
+                result.error("NO_CONTEXT", "Context not available", null)
+                return
+            }
+            
+            val queueManager = SmsQueueManager(context)
+            val messages = queueManager.getUnprocessedSms()
+            
+            // Convert to list of maps for platform channel
+            val messageList = messages.map { it.toMap() }
+            
+            Log.d(TAG, "Retrieved ${messageList.size} unprocessed SMS messages")
+            result.success(messageList)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting unprocessed SMS: ${e.message}", e)
+            result.error("QUEUE_ERROR", "Error getting unprocessed SMS: ${e.message}", e.toString())
+        }
+    }
+    
+    /**
+     * Mark an SMS message as processed.
+     * Called by Flutter after successfully processing a queued message.
+     */
+    private fun markSmsAsProcessed(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val id = call.argument<String>("id")
+            if (id == null) {
+                result.error("INVALID_ARGUMENT", "Message ID is required", null)
+                return
+            }
+            
+            Log.d(TAG, "Marking SMS as processed: $id")
+            val context = this.context
+            if (context == null) {
+                result.error("NO_CONTEXT", "Context not available", null)
+                return
+            }
+            
+            val queueManager = SmsQueueManager(context)
+            val success = queueManager.markAsProcessed(id)
+            
+            Log.d(TAG, "Mark as processed result: $success")
+            result.success(success)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error marking SMS as processed: ${e.message}", e)
+            result.error("QUEUE_ERROR", "Error marking SMS as processed: ${e.message}", e.toString())
+        }
+    }
+    
+    /**
+     * Get queue statistics for monitoring.
+     */
+    private fun getQueueStats(result: MethodChannel.Result) {
+        try {
+            Log.d(TAG, "Getting queue statistics")
+            val context = this.context
+            if (context == null) {
+                result.error("NO_CONTEXT", "Context not available", null)
+                return
+            }
+            
+            val queueManager = SmsQueueManager(context)
+            val stats = queueManager.getQueueStats()
+            
+            Log.d(TAG, "Queue stats: unprocessed=${stats.unprocessedCount}, total=${stats.totalQueued}")
+            result.success(stats.toMap())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting queue stats: ${e.message}", e)
+            result.error("QUEUE_ERROR", "Error getting queue stats: ${e.message}", e.toString())
+        }
+    }
+    
+    /**
+     * Perform queue cleanup operations.
+     * Removes old messages and enforces queue size limit.
+     */
+    private fun cleanupQueue(result: MethodChannel.Result) {
+        try {
+            Log.d(TAG, "Performing queue cleanup")
+            val context = this.context
+            if (context == null) {
+                result.error("NO_CONTEXT", "Context not available", null)
+                return
+            }
+            
+            val queueManager = SmsQueueManager(context)
+            
+            val oldDeleted = queueManager.cleanupOldMessages()
+            val processedDeleted = queueManager.cleanupProcessed()
+            val limitDeleted = queueManager.enforceQueueLimit()
+            
+            val totalDeleted = oldDeleted + processedDeleted + limitDeleted
+            
+            Log.d(TAG, "Queue cleanup complete: old=$oldDeleted, processed=$processedDeleted, limit=$limitDeleted")
+            result.success(mapOf(
+                "oldMessagesDeleted" to oldDeleted,
+                "processedMessagesDeleted" to processedDeleted,
+                "limitEnforcementDeleted" to limitDeleted,
+                "totalDeleted" to totalDeleted
+            ))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up queue: ${e.message}", e)
+            result.error("QUEUE_ERROR", "Error cleaning up queue: ${e.message}", e.toString())
+        }
+    }
+    
+    /**
+     * Get device manufacturer for battery optimization guidance.
+     */
+    private fun getDeviceManufacturer(result: MethodChannel.Result) {
+        try {
+            val manufacturer = Build.MANUFACTURER
+            val model = Build.MODEL
+            val brand = Build.BRAND
+            
+            Log.d(TAG, "Device info: manufacturer=$manufacturer, model=$model, brand=$brand")
+            result.success(mapOf(
+                "manufacturer" to manufacturer,
+                "model" to model,
+                "brand" to brand
+            ))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting device manufacturer: ${e.message}", e)
+            result.error("DEVICE_INFO_ERROR", "Error getting device manufacturer: ${e.message}", e.toString())
         }
     }
 }

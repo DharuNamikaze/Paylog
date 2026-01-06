@@ -4,15 +4,22 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
 /**
- * Background service for persistent SMS monitoring
+ * Background service for persistent SMS monitoring.
  * 
- * This service runs as a foreground service to ensure Android doesn't kill it.
- * It maintains SMS monitoring even when the app is not in the foreground.
+ * IMPORTANT: This service does NOT process SMS messages.
+ * Its responsibilities are limited to:
+ * 1. Process survival - Keeps the app process alive so BroadcastReceiver works
+ * 2. Queue maintenance - Periodic cleanup of old/processed messages
+ * 3. User visibility - Shows notification that monitoring is active
+ * 
+ * All SMS processing happens in Flutter when it reads from the SQLite queue.
  */
 class SmsMonitoringService : Service() {
     
@@ -24,14 +31,26 @@ class SmsMonitoringService : Service() {
         // Service actions
         const val ACTION_START_MONITORING = "com.paylog.app.START_MONITORING"
         const val ACTION_STOP_MONITORING = "com.paylog.app.STOP_MONITORING"
+        
+        // Cleanup interval: 6 hours
+        private const val CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000L
     }
     
     private var isMonitoring = false
+    private var queueManager: SmsQueueManager? = null
+    private var cleanupHandler: Handler? = null
+    private var cleanupRunnable: Runnable? = null
     
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SMS Monitoring Service created")
         createNotificationChannel()
+        
+        // Initialize queue manager for cleanup operations
+        queueManager = SmsQueueManager(applicationContext)
+        
+        // Perform initial cleanup
+        performQueueCleanup()
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -46,6 +65,10 @@ class SmsMonitoringService : Service() {
             }
             else -> {
                 Log.w(TAG, "Unknown action received: ${intent?.action}")
+                // If service is restarted by system, start monitoring
+                if (!isMonitoring) {
+                    startMonitoring()
+                }
             }
         }
         
@@ -59,12 +82,16 @@ class SmsMonitoringService : Service() {
     
     override fun onDestroy() {
         Log.d(TAG, "SMS Monitoring Service destroyed")
+        stopCleanupScheduler()
         stopMonitoring()
         super.onDestroy()
     }
     
     /**
-     * Start SMS monitoring in foreground mode
+     * Start SMS monitoring in foreground mode.
+     * 
+     * NOTE: This service does NOT process SMS.
+     * It only keeps the process alive and performs queue maintenance.
      */
     private fun startMonitoring() {
         if (isMonitoring) {
@@ -72,7 +99,7 @@ class SmsMonitoringService : Service() {
             return
         }
         
-        Log.i(TAG, "Starting SMS monitoring service")
+        Log.i(TAG, "Starting SMS monitoring service (process keeper + queue maintenance)")
         
         // Start foreground service with notification
         val notification = createMonitoringNotification()
@@ -80,13 +107,15 @@ class SmsMonitoringService : Service() {
         
         isMonitoring = true
         
-        // The actual SMS monitoring is handled by SmsReceiver
-        // This service just ensures the process stays alive
+        // Start periodic cleanup scheduler
+        startCleanupScheduler()
+        
         Log.i(TAG, "SMS monitoring service is now active")
+        Log.i(TAG, "NOTE: SMS processing happens in Flutter, this service only keeps process alive")
     }
     
     /**
-     * Stop SMS monitoring
+     * Stop SMS monitoring.
      */
     private fun stopMonitoring() {
         if (!isMonitoring) {
@@ -96,11 +125,71 @@ class SmsMonitoringService : Service() {
         
         Log.i(TAG, "Stopping SMS monitoring service")
         
+        stopCleanupScheduler()
         isMonitoring = false
         stopForeground(true)
         stopSelf()
         
         Log.i(TAG, "SMS monitoring service stopped")
+    }
+    
+    /**
+     * Start periodic cleanup scheduler.
+     * Runs every 6 hours to clean up old and processed messages.
+     */
+    private fun startCleanupScheduler() {
+        cleanupHandler = Handler(Looper.getMainLooper())
+        cleanupRunnable = object : Runnable {
+            override fun run() {
+                performQueueCleanup()
+                cleanupHandler?.postDelayed(this, CLEANUP_INTERVAL_MS)
+            }
+        }
+        
+        // Schedule first cleanup after 6 hours
+        cleanupHandler?.postDelayed(cleanupRunnable!!, CLEANUP_INTERVAL_MS)
+        Log.d(TAG, "Queue cleanup scheduler started (interval: ${CLEANUP_INTERVAL_MS / 1000 / 60 / 60} hours)")
+    }
+    
+    /**
+     * Stop periodic cleanup scheduler.
+     */
+    private fun stopCleanupScheduler() {
+        cleanupRunnable?.let { runnable ->
+            cleanupHandler?.removeCallbacks(runnable)
+        }
+        cleanupHandler = null
+        cleanupRunnable = null
+        Log.d(TAG, "Queue cleanup scheduler stopped")
+    }
+    
+    /**
+     * Perform queue cleanup operations.
+     */
+    private fun performQueueCleanup() {
+        try {
+            Log.d(TAG, "Performing queue cleanup")
+            
+            val oldDeleted = queueManager?.cleanupOldMessages() ?: 0
+            val processedDeleted = queueManager?.cleanupProcessed() ?: 0
+            val limitDeleted = queueManager?.enforceQueueLimit() ?: 0
+            
+            val totalDeleted = oldDeleted + processedDeleted + limitDeleted
+            
+            if (totalDeleted > 0) {
+                Log.i(TAG, "Queue cleanup complete: old=$oldDeleted, processed=$processedDeleted, limit=$limitDeleted")
+            } else {
+                Log.d(TAG, "Queue cleanup complete: no messages removed")
+            }
+            
+            // Log queue stats
+            val stats = queueManager?.getQueueStats()
+            if (stats != null) {
+                Log.d(TAG, "Queue stats: unprocessed=${stats.unprocessedCount}, total=${stats.totalQueued}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during queue cleanup: ${e.message}", e)
+        }
     }
     
     /**

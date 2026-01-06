@@ -503,4 +503,352 @@ class SmsPlatformChannel {
     _smsSubscription = null;
     _isListening = false;
   }
+  
+  // ========================================
+  // Queue Management Methods
+  // ========================================
+  
+  /// Get all unprocessed SMS messages from the native queue.
+  /// Called to process messages that were received while Flutter was not running.
+  Future<List<QueuedSmsMessage>> getUnprocessedSms() async {
+    try {
+      developer.log('Getting unprocessed SMS from native queue', name: 'SmsPlatformChannel');
+      
+      final result = await _methodChannel.invokeMethod('getUnprocessedSms');
+      
+      if (result is List) {
+        final messages = result.map((item) {
+          final map = Map<String, dynamic>.from(item as Map);
+          return QueuedSmsMessage.fromMap(map);
+        }).toList();
+        
+        developer.log('Retrieved ${messages.length} unprocessed SMS messages', name: 'SmsPlatformChannel');
+        return messages;
+      }
+      
+      return [];
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error getting unprocessed SMS: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      throw SmsException(
+        'Failed to get unprocessed SMS: ${e.message}',
+        code: e.code,
+        details: e.details,
+      );
+    }
+  }
+  
+  /// Mark an SMS message as processed in the native queue.
+  /// Called after successfully processing a queued message.
+  Future<bool> markSmsAsProcessed(String id) async {
+    try {
+      developer.log('Marking SMS as processed: $id', name: 'SmsPlatformChannel');
+      
+      final result = await _methodChannel.invokeMethod('markSmsAsProcessed', {'id': id});
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error marking SMS as processed: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      throw SmsException(
+        'Failed to mark SMS as processed: ${e.message}',
+        code: e.code,
+        details: e.details,
+      );
+    }
+  }
+  
+  /// Get queue statistics for monitoring.
+  Future<QueueStats> getQueueStats() async {
+    try {
+      developer.log('Getting queue statistics', name: 'SmsPlatformChannel');
+      
+      final result = await _methodChannel.invokeMethod('getQueueStats');
+      
+      if (result is Map) {
+        return QueueStats.fromMap(Map<String, dynamic>.from(result));
+      }
+      
+      return QueueStats.empty();
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error getting queue stats: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      throw SmsException(
+        'Failed to get queue stats: ${e.message}',
+        code: e.code,
+        details: e.details,
+      );
+    }
+  }
+  
+  /// Perform queue cleanup operations.
+  Future<Map<String, int>> cleanupQueue() async {
+    try {
+      developer.log('Performing queue cleanup', name: 'SmsPlatformChannel');
+      
+      final result = await _methodChannel.invokeMethod('cleanupQueue');
+      
+      if (result is Map) {
+        return Map<String, int>.from(result.map((k, v) => MapEntry(k.toString(), v as int)));
+      }
+      
+      return {};
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error cleaning up queue: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      throw SmsException(
+        'Failed to cleanup queue: ${e.message}',
+        code: e.code,
+        details: e.details,
+      );
+    }
+  }
+  
+  /// Get device manufacturer for battery optimization guidance.
+  Future<DeviceInfo> getDeviceManufacturer() async {
+    try {
+      final result = await _methodChannel.invokeMethod('getDeviceManufacturer');
+      
+      if (result is Map) {
+        return DeviceInfo.fromMap(Map<String, dynamic>.from(result));
+      }
+      
+      return DeviceInfo.unknown();
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error getting device manufacturer: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      return DeviceInfo.unknown();
+    }
+  }
+  
+  /// Request battery optimization exemption.
+  Future<bool> requestBatteryOptimizationExemption() async {
+    try {
+      final result = await _methodChannel.invokeMethod('requestBatteryOptimizationExemption');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error requesting battery optimization exemption: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      return false;
+    }
+  }
+  
+  /// Check if battery optimization is ignored.
+  Future<bool> isBatteryOptimizationIgnored() async {
+    try {
+      final result = await _methodChannel.invokeMethod('isBatteryOptimizationIgnored');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error checking battery optimization status: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      return false;
+    }
+  }
+  
+  /// Start background SMS monitoring service.
+  Future<bool> startBackgroundService() async {
+    try {
+      final result = await _methodChannel.invokeMethod('startBackgroundService');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error starting background service: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      return false;
+    }
+  }
+  
+  /// Stop background SMS monitoring service.
+  Future<bool> stopBackgroundService() async {
+    try {
+      final result = await _methodChannel.invokeMethod('stopBackgroundService');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error stopping background service: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      return false;
+    }
+  }
+  
+  /// Check if background service is running.
+  Future<bool> isBackgroundServiceRunning() async {
+    try {
+      final result = await _methodChannel.invokeMethod('isBackgroundServiceRunning');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      developer.log(
+        'Error checking background service status: ${e.message}',
+        name: 'SmsPlatformChannel',
+        error: e,
+      );
+      return false;
+    }
+  }
+}
+
+/// Data class representing a queued SMS message from native storage.
+class QueuedSmsMessage {
+  final String id;
+  final String hash;
+  final String sender;
+  final String content;
+  final DateTime timestamp;
+  final DateTime queuedAt;
+  final bool processed;
+
+  const QueuedSmsMessage({
+    required this.id,
+    required this.hash,
+    required this.sender,
+    required this.content,
+    required this.timestamp,
+    required this.queuedAt,
+    required this.processed,
+  });
+
+  factory QueuedSmsMessage.fromMap(Map<String, dynamic> map) {
+    return QueuedSmsMessage(
+      id: map['id'] as String? ?? '',
+      hash: map['hash'] as String? ?? '',
+      sender: map['sender'] as String? ?? 'Unknown',
+      content: map['content'] as String? ?? '',
+      timestamp: DateTime.fromMillisecondsSinceEpoch(
+        map['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch,
+      ),
+      queuedAt: DateTime.fromMillisecondsSinceEpoch(
+        map['queuedAt'] as int? ?? DateTime.now().millisecondsSinceEpoch,
+      ),
+      processed: map['processed'] as bool? ?? false,
+    );
+  }
+
+  /// Convert to SmsMessage for processing.
+  SmsMessage toSmsMessage() {
+    return SmsMessage(
+      sender: sender,
+      content: content,
+      timestamp: timestamp,
+      threadId: null,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'QueuedSmsMessage(id: $id, sender: $sender, processed: $processed)';
+  }
+}
+
+/// Data class for queue statistics.
+class QueueStats {
+  final int totalQueued;
+  final int unprocessedCount;
+  final int processedCount;
+  final Duration? oldestUnprocessedAge;
+  final Duration? newestUnprocessedAge;
+
+  const QueueStats({
+    required this.totalQueued,
+    required this.unprocessedCount,
+    required this.processedCount,
+    this.oldestUnprocessedAge,
+    this.newestUnprocessedAge,
+  });
+
+  factory QueueStats.fromMap(Map<String, dynamic> map) {
+    return QueueStats(
+      totalQueued: map['totalQueued'] as int? ?? 0,
+      unprocessedCount: map['unprocessedCount'] as int? ?? 0,
+      processedCount: map['processedCount'] as int? ?? 0,
+      oldestUnprocessedAge: map['oldestUnprocessedAge'] != null
+          ? Duration(milliseconds: map['oldestUnprocessedAge'] as int)
+          : null,
+      newestUnprocessedAge: map['newestUnprocessedAge'] != null
+          ? Duration(milliseconds: map['newestUnprocessedAge'] as int)
+          : null,
+    );
+  }
+
+  factory QueueStats.empty() {
+    return const QueueStats(
+      totalQueued: 0,
+      unprocessedCount: 0,
+      processedCount: 0,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'QueueStats(total: $totalQueued, unprocessed: $unprocessedCount, processed: $processedCount)';
+  }
+}
+
+/// Data class for device information.
+class DeviceInfo {
+  final String manufacturer;
+  final String model;
+  final String brand;
+
+  const DeviceInfo({
+    required this.manufacturer,
+    required this.model,
+    required this.brand,
+  });
+
+  factory DeviceInfo.fromMap(Map<String, dynamic> map) {
+    return DeviceInfo(
+      manufacturer: map['manufacturer'] as String? ?? 'Unknown',
+      model: map['model'] as String? ?? 'Unknown',
+      brand: map['brand'] as String? ?? 'Unknown',
+    );
+  }
+
+  factory DeviceInfo.unknown() {
+    return const DeviceInfo(
+      manufacturer: 'Unknown',
+      model: 'Unknown',
+      brand: 'Unknown',
+    );
+  }
+
+  /// Check if device is from a manufacturer known for aggressive battery optimization.
+  bool get hasAggressiveBatteryOptimization {
+    final lowerManufacturer = manufacturer.toLowerCase();
+    return lowerManufacturer.contains('xiaomi') ||
+        lowerManufacturer.contains('huawei') ||
+        lowerManufacturer.contains('oppo') ||
+        lowerManufacturer.contains('vivo') ||
+        lowerManufacturer.contains('oneplus') ||
+        lowerManufacturer.contains('realme') ||
+        lowerManufacturer.contains('samsung');
+  }
+
+  @override
+  String toString() {
+    return 'DeviceInfo(manufacturer: $manufacturer, model: $model, brand: $brand)';
+  }
 }
