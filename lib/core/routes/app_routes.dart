@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../presentation/pages/dashboard_page.dart';
 import '../../presentation/pages/transaction_detail_page.dart';
 import '../../presentation/pages/manual_input_page.dart';
+import '../../presentation/pages/todo_page.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/entities/transaction.dart';
 
@@ -10,6 +11,7 @@ class AppRoutes {
   static const String dashboard = '/';
   static const String transactionDetail = '/transaction-detail';
   static const String manualInput = '/manual-input';
+  static const String todo = '/todo';
 }
 
 /// Route generator for the application
@@ -52,6 +54,12 @@ class AppRouteGenerator {
         
         return MaterialPageRoute(
           builder: (context) => ManualInputPage(userId: userId),
+          settings: settings,
+        );
+
+      case AppRoutes.todo:
+        return MaterialPageRoute(
+          builder: (context) => const TodoPage(),
           settings: settings,
         );
 
@@ -147,6 +155,11 @@ class AppNavigator {
       AppRoutes.manualInput,
       arguments: {'userId': userId},
     );
+  }
+
+  /// Navigate to todo page
+  static Future<void> toTodo(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.todo);
   }
 
   /// Go back to previous screen

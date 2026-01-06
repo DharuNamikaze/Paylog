@@ -316,11 +316,27 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _navigateToManualInput(),
-        icon: const Icon(Icons.add),
-        label: const Text('Manual Entry'),
-        tooltip: 'Add transaction manually',
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Todo FAB - positioned above manual entry FAB
+          // Requirements: 1.1, 1.2, 1.3
+          FloatingActionButton(
+            heroTag: 'todoFab',
+            onPressed: () => _navigateToTodoPage(),
+            tooltip: 'Todo List',
+            child: const Icon(Icons.checklist),
+          ),
+          const SizedBox(height: 16),
+          // Manual Entry FAB - existing functionality
+          FloatingActionButton.extended(
+            heroTag: 'manualEntryFab',
+            onPressed: () => _navigateToManualInput(),
+            icon: const Icon(Icons.add),
+            label: const Text('Manual Entry'),
+            tooltip: 'Add transaction manually',
+          ),
+        ],
       ),
     );
   }
@@ -473,6 +489,12 @@ class _DashboardPageState extends State<DashboardPage> {
   /// Navigate to manual input page
   void _navigateToManualInput() {
     AppNavigator.toManualInput(context, widget.userId);
+  }
+
+  /// Navigate to todo page
+  /// Requirements: 1.2
+  void _navigateToTodoPage() {
+    AppNavigator.toTodo(context);
   }
 
   /// Build SMS service controls and status
