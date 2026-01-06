@@ -3,16 +3,27 @@ import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/utils/transaction_hash.dart';
 import '../../domain/entities/transaction.dart' as domain;
 import '../../domain/entities/transaction_type.dart';
 import '../../domain/repositories/transaction_repository.dart';
 import '../datasources/local_storage_datasource.dart';
 
 /// Implementation of TransactionRepository using Firebase Firestore
+/// 
+/// This repository uses transaction hashes as document IDs for cloud-side
+/// deduplication and uses upsert (merge) operations for all writes.
+/// 
+/// Requirements: 7.1, 7.2, 7.3, 8.3
 class TransactionRepositoryImpl implements TransactionRepository {
   final FirebaseFirestore? _firestore;
   final LocalStorageDataSource? _localDataSource;
   final Uuid _uuid;
+  
+  /// Optional AuthService for getting the current user ID
+  /// Requirements: 8.3 - Ensure userId matches auth UID
+  AuthService? _authService;
   
   /// Maximum number of retry attempts for failed operations
   static const int maxRetries = 3;
@@ -24,35 +35,61 @@ class TransactionRepositoryImpl implements TransactionRepository {
     FirebaseFirestore? firestore,
     LocalStorageDataSource? localDataSource,
     Uuid? uuid,
+    AuthService? authService,
   })  : _firestore = firestore,
         _localDataSource = localDataSource,
-        _uuid = uuid ?? const Uuid();
+        _uuid = uuid ?? const Uuid(),
+        _authService = authService;
+  
+  /// Set the AuthService for user ID resolution
+  /// 
+  /// This is set after initialization to avoid circular dependencies.
+  /// Requirements: 8.3
+  void setAuthService(AuthService authService) {
+    _authService = authService;
+  }
   
   @override
   Future<String> saveTransaction(domain.Transaction transaction) async {
-    // Generate unique ID if not provided
-    final transactionId = transaction.id.isEmpty ? _uuid.v4() : transaction.id;
+    // Generate unique local ID if not provided
+    final localId = transaction.id.isEmpty ? _uuid.v4() : transaction.id;
     
-    // Create transaction with ID
+    // Compute transaction hash for Firestore document ID
+    // Requirements: 7.1 - Use transaction hash as document ID
+    final transactionHash = computeTransactionHash(transaction);
+    
+    // Determine the userId to use
+    // Requirements: 8.3 - Ensure userId matches auth UID
+    String userId = transaction.userId;
+    if (_authService != null && _authService!.isAuthenticated) {
+      userId = _authService!.currentUid ?? transaction.userId;
+    }
+    
+    // Create transaction with ID and userId
     final transactionWithId = transaction.copyWith(
-      id: transactionId,
+      id: localId,
+      userId: userId,
     );
     
     try {
       // Try to save to Firestore if available
       if (_firestore != null) {
         final data = _transactionToFirestoreMap(transactionWithId.copyWith(syncedToFirestore: true));
+        // Add localId to the data for reference
+        data['localId'] = localId;
         
         await _executeWithRetry(() async {
+          // Requirements: 7.2 - Use path /users/{uid}/transactions/{transactionHash}
+          // Requirements: 7.3 - Use set(..., SetOptions(merge: true)) for upserts
           await _firestore!
               .collection('users')
-              .doc(transaction.userId)
+              .doc(userId)
               .collection('transactions')
-              .doc(transactionId)
-              .set(data);
+              .doc(transactionHash)
+              .set(data, SetOptions(merge: true));
         });
         
-        developer.log('Transaction saved to Firestore: $transactionId', name: 'TransactionRepository');
+        developer.log('Transaction saved to Firestore with hash: $transactionHash (localId: $localId)', name: 'TransactionRepository');
       } else {
         developer.log('Firestore not available, saving locally only', name: 'TransactionRepository');
       }
@@ -62,7 +99,7 @@ class TransactionRepositoryImpl implements TransactionRepository {
         await _localDataSource!.saveTransaction(transactionWithId.copyWith(
           syncedToFirestore: _firestore != null,
         ));
-        developer.log('Transaction saved to local storage: $transactionId', name: 'TransactionRepository');
+        developer.log('Transaction saved to local storage: $localId', name: 'TransactionRepository');
       }
       
     } catch (e) {
@@ -73,13 +110,13 @@ class TransactionRepositoryImpl implements TransactionRepository {
         await _localDataSource!.saveTransaction(transactionWithId.copyWith(syncedToFirestore: false));
         // Queue for later sync
         await _localDataSource!.queueTransaction(transactionWithId);
-        developer.log('Transaction queued for sync: $transactionId', name: 'TransactionRepository');
+        developer.log('Transaction queued for sync: $localId', name: 'TransactionRepository');
       } else {
         rethrow; // If no local storage, we can't save anywhere
       }
     }
     
-    return transactionId;
+    return localId;
   }
   
   @override
@@ -162,14 +199,30 @@ class TransactionRepositoryImpl implements TransactionRepository {
         try {
           // Only sync to Firestore if available
           if (_firestore != null) {
+            // Compute transaction hash for document ID
+            // Requirements: 7.1 - Use transaction hash as document ID
+            final transactionHash = computeTransactionHash(transaction);
+            
+            // Determine the userId to use
+            // Requirements: 8.3 - Ensure userId matches auth UID
+            String userId = transaction.userId;
+            if (_authService != null && _authService!.isAuthenticated) {
+              userId = _authService!.currentUid ?? transaction.userId;
+            }
+            
             final data = _transactionToFirestoreMap(transaction.copyWith(syncedToFirestore: true));
+            // Add localId to the data for reference
+            data['localId'] = transaction.id;
+            
+            // Requirements: 7.2 - Use path /users/{uid}/transactions/{transactionHash}
+            // Requirements: 7.3 - Use set(..., SetOptions(merge: true)) for upserts
             await _firestore!
                 .collection('users')
-                .doc(transaction.userId)
+                .doc(userId)
                 .collection('transactions')
-                .doc(transaction.id)
-                .set(data);
-            developer.log('Synced transaction ${transaction.id} to Firestore', name: 'TransactionRepository');
+                .doc(transactionHash)
+                .set(data, SetOptions(merge: true));
+            developer.log('Synced transaction ${transaction.id} to Firestore with hash: $transactionHash', name: 'TransactionRepository');
           }
           
           // Remove from local queue on success

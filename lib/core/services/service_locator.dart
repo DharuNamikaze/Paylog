@@ -15,8 +15,12 @@ import '../../domain/usecases/validate_transaction.dart';
 import '../../domain/usecases/sync_offline_queue.dart';
 import '../../core/utils/duplicate_detector.dart';
 import '../../core/services/permissions_service.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/services/connectivity_monitor.dart';
+import '../../core/services/cloud_sync_service.dart';
 import '../../presentation/bloc/sms_bloc.dart';
 import '../../presentation/bloc/transaction_bloc.dart';
+import '../../presentation/bloc/sync_bloc.dart';
 
 /// Simple service locator for dependency injection
 /// 
@@ -89,6 +93,20 @@ class ServiceLocator {
 
     // Register UUID generator
     _services[Uuid] = const Uuid();
+
+    // Initialize AuthService first (Requirements: 8.1)
+    debugPrint('🔄 Initializing AuthService...');
+    final authService = AuthService();
+    await authService.initialize();
+    _services[AuthService] = authService;
+    debugPrint('✅ AuthService initialized');
+
+    // Initialize ConnectivityMonitor second
+    debugPrint('🔄 Initializing ConnectivityMonitor...');
+    final connectivityMonitor = ConnectivityMonitor();
+    await connectivityMonitor.initialize();
+    _services[ConnectivityMonitor] = connectivityMonitor;
+    debugPrint('✅ ConnectivityMonitor initialized');
   }
 
   /// Initialize data sources
@@ -103,17 +121,43 @@ class ServiceLocator {
   }
 
   /// Initialize repositories
+  /// 
+  /// Creates TransactionRepositoryImpl (Firestore-backed) when:
+  /// - AuthService.isAuthenticated == true
+  /// - Firebase initialization succeeded
+  /// 
+  /// Falls back to LocalTransactionRepository only on actual auth/Firebase failure.
   void _initializeRepositories() {
-    // Initialize local storage first
     final localStorage = _services[LocalStorageDataSource] as LocalStorageDataSource;
+    final authService = _services[AuthService] as AuthService;
     
-    // For now, use local-only mode to avoid Firebase permission issues
-    debugPrint('🔄 Initializing in local-only mode to avoid Firebase permission issues');
-    _services[TransactionRepository] = LocalTransactionRepository(
-      localStorage: localStorage,
-      uuid: _services[Uuid] as Uuid,
-    );
-    debugPrint('✅ TransactionRepository initialized in local-only mode');
+    // Decision: Use Firestore-backed repo if authenticated, local-only otherwise
+    if (authService.isAuthenticated) {
+      debugPrint('🔄 Initializing TransactionRepositoryImpl (cloud-enabled mode)');
+      debugPrint('   Auth UID: ${authService.currentUid}');
+      
+      final firestoreRepo = TransactionRepositoryImpl(
+        firestore: FirebaseFirestore.instance,
+        localDataSource: localStorage,
+        uuid: _services[Uuid] as Uuid,
+        authService: authService,
+      );
+      
+      _services[TransactionRepository] = firestoreRepo;
+      _services[TransactionRepositoryImpl] = firestoreRepo; // Also register concrete type
+      debugPrint('✅ TransactionRepository initialized in cloud-enabled mode');
+    } else {
+      // Fallback: Local-only mode due to auth failure
+      debugPrint('🔄 Initializing in local-only mode (auth not available)');
+      debugPrint('   isAuthenticated: ${authService.isAuthenticated}');
+      debugPrint('   isLocalOnlyMode: ${authService.isLocalOnlyMode}');
+      
+      _services[TransactionRepository] = LocalTransactionRepository(
+        localStorage: localStorage,
+        uuid: _services[Uuid] as Uuid,
+      );
+      debugPrint('✅ TransactionRepository initialized in local-only mode');
+    }
   }
 
   /// Initialize use cases
@@ -128,12 +172,13 @@ class ServiceLocator {
     _services[ValidateTransaction] = ValidateTransaction();
     
     // Offline Queue Sync - only if we have TransactionRepositoryImpl
-    final repository = _services[TransactionRepository];
-    if (repository is TransactionRepositoryImpl) {
+    if (_services.containsKey(TransactionRepositoryImpl)) {
+      final firestoreRepo = _services[TransactionRepositoryImpl] as TransactionRepositoryImpl;
       _services[SyncOfflineQueue] = SyncOfflineQueue(
         localStorage: _services[LocalStorageDataSource] as LocalStorageDataSource,
-        repository: repository,
+        repository: firestoreRepo,
       );
+      debugPrint('✅ SyncOfflineQueue initialized (cloud-enabled mode)');
     } else {
       debugPrint('⚠️ Skipping SyncOfflineQueue - using LocalTransactionRepository (no sync needed)');
     }
@@ -183,6 +228,38 @@ class ServiceLocator {
     await smsListenerService.initialize();
     
     _services[SmsListenerService] = smsListenerService;
+
+    // Initialize CloudSyncService (Requirements: 8.1 - proper initialization order)
+    // Auth → Connectivity → Sync
+    debugPrint('🔄 Initializing CloudSyncService...');
+    
+    // Get TransactionRepositoryImpl if available (cloud-enabled mode)
+    final TransactionRepositoryImpl? firestoreRepo = 
+        _services.containsKey(TransactionRepositoryImpl) 
+            ? _services[TransactionRepositoryImpl] as TransactionRepositoryImpl 
+            : null;
+    
+    final authService = _services[AuthService] as AuthService;
+    
+    // Log sync mode decision
+    if (firestoreRepo != null && authService.isAuthenticated) {
+      debugPrint('   CloudSyncService: cloud-enabled mode (FirestoreRepo available)');
+    } else {
+      debugPrint('   CloudSyncService: local-only mode');
+      debugPrint('   - firestoreRepo: ${firestoreRepo != null ? "available" : "null"}');
+      debugPrint('   - isAuthenticated: ${authService.isAuthenticated}');
+    }
+    
+    final cloudSyncService = CloudSyncService(
+      localStorage: _services[LocalStorageDataSource] as LocalStorageDataSource,
+      firestoreRepo: firestoreRepo,
+      authService: authService,
+      connectivityMonitor: _services[ConnectivityMonitor] as ConnectivityMonitor,
+      firestore: authService.isAuthenticated ? FirebaseFirestore.instance : null,
+    );
+    await cloudSyncService.initialize();
+    _services[CloudSyncService] = cloudSyncService;
+    debugPrint('✅ CloudSyncService initialized');
   }
 
   /// Initialize core services without Firebase
@@ -196,6 +273,26 @@ class ServiceLocator {
 
     // Register UUID generator
     _services[Uuid] = const Uuid();
+
+    // Initialize AuthService (will operate in local-only mode if Firebase Auth fails)
+    // Requirements: 8.1, 8.6
+    debugPrint('🔄 Initializing AuthService (without Firebase)...');
+    final authService = AuthService();
+    // Don't await - let it fail gracefully and operate in local-only mode
+    try {
+      await authService.initialize();
+      debugPrint('✅ AuthService initialized (may be in local-only mode)');
+    } catch (e) {
+      debugPrint('⚠️ AuthService initialization failed, operating in local-only mode: $e');
+    }
+    _services[AuthService] = authService;
+
+    // Initialize ConnectivityMonitor
+    debugPrint('🔄 Initializing ConnectivityMonitor...');
+    final connectivityMonitor = ConnectivityMonitor();
+    await connectivityMonitor.initialize();
+    _services[ConnectivityMonitor] = connectivityMonitor;
+    debugPrint('✅ ConnectivityMonitor initialized');
   }
 
   /// Initialize repositories without Firebase (use local storage only)
@@ -230,6 +327,26 @@ class ServiceLocator {
       debugPrint('⚠️ Failed to initialize SMS Listener Service: $e');
       // Don't set to null, just don't register it
       debugPrint('⚠️ SMS functionality will be limited');
+    }
+
+    // Initialize CloudSyncService even in local-only mode
+    // It will gracefully handle auth failures and operate without cloud sync
+    // Requirements: 8.6 - local-only fallback
+    debugPrint('🔄 Initializing CloudSyncService (local-only mode)...');
+    try {
+      final cloudSyncService = CloudSyncService(
+        localStorage: _services[LocalStorageDataSource] as LocalStorageDataSource,
+        firestoreRepo: null, // No Firestore in local-only mode
+        authService: _services[AuthService] as AuthService,
+        connectivityMonitor: _services[ConnectivityMonitor] as ConnectivityMonitor,
+        firestore: null, // No Firestore in local-only mode
+      );
+      await cloudSyncService.initialize();
+      _services[CloudSyncService] = cloudSyncService;
+      debugPrint('✅ CloudSyncService initialized (local-only mode - sync disabled)');
+    } catch (e) {
+      debugPrint('⚠️ Failed to initialize CloudSyncService: $e');
+      debugPrint('⚠️ Cloud sync functionality will be disabled');
     }
   }
 
@@ -270,6 +387,26 @@ class ServiceLocator {
     );
   }
 
+  /// Create a SyncBloc with dependencies
+  /// 
+  /// SyncBloc requires CloudSyncService and ConnectivityMonitor
+  SyncBloc createSyncBloc() {
+    final cloudSyncService = _services[CloudSyncService];
+    final connectivityMonitor = _services[ConnectivityMonitor];
+    
+    if (cloudSyncService == null) {
+      throw StateError('CloudSyncService is not available. Check service initialization.');
+    }
+    if (connectivityMonitor == null) {
+      throw StateError('ConnectivityMonitor is not available. Check service initialization.');
+    }
+    
+    return SyncBloc(
+      cloudSyncService: cloudSyncService as CloudSyncService,
+      connectivityMonitor: connectivityMonitor as ConnectivityMonitor,
+    );
+  }
+
   /// Check if a service is registered
   bool isRegistered<T>() {
     return _services.containsKey(T);
@@ -294,6 +431,15 @@ class ServiceLocator {
     }
     
     try {
+      // Dispose CloudSyncService first (depends on other services)
+      if (_services.containsKey(CloudSyncService)) {
+        final service = _services[CloudSyncService] as CloudSyncService?;
+        if (service != null) {
+          service.dispose();
+          debugPrint('✅ CloudSyncService disposed');
+        }
+      }
+
       // Dispose SMS Listener Service
       if (_services.containsKey(SmsListenerService)) {
         final service = _services[SmsListenerService] as SmsListenerService?;
@@ -315,6 +461,24 @@ class ServiceLocator {
         final channel = _services[SmsPlatformChannel] as SmsPlatformChannel?;
         if (channel != null) {
           channel.dispose();
+        }
+      }
+
+      // Dispose ConnectivityMonitor
+      if (_services.containsKey(ConnectivityMonitor)) {
+        final monitor = _services[ConnectivityMonitor] as ConnectivityMonitor?;
+        if (monitor != null) {
+          monitor.dispose();
+          debugPrint('✅ ConnectivityMonitor disposed');
+        }
+      }
+
+      // Dispose AuthService
+      if (_services.containsKey(AuthService)) {
+        final authService = _services[AuthService] as AuthService?;
+        if (authService != null) {
+          authService.dispose();
+          debugPrint('✅ AuthService disposed');
         }
       }
       

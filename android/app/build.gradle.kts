@@ -46,10 +46,11 @@ flutter {
 }
 
 dependencies {
-    // Import the Firebase BoM
-    implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
+    // Import the Firebase BoM (version compatible with Flutter Firebase packages)
+    implementation(platform("com.google.firebase:firebase-bom:32.7.4"))
     
     // Add the dependencies for Firebase products you want to use
+    // Note: firebase-auth is handled by the Flutter plugin, don't add it here manually
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-firestore")
 }

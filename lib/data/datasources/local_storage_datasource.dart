@@ -6,10 +6,12 @@ class LocalStorageDataSource {
   static const String _queueBoxName = 'transaction_queue';
   static const String _cacheBoxName = 'transaction_cache';
   static const String _metadataBoxName = 'metadata';
+  static const String _retryMetadataBoxName = 'retry_metadata';
   
   Box<Map>? _queueBox;
   Box<Map>? _cacheBox;
   Box<dynamic>? _metadataBox;
+  Box<Map>? _retryMetadataBox;
   
   /// Initialize Hive and open boxes
   /// If [path] is provided, Hive will be initialized with that path (useful for testing)
@@ -25,6 +27,7 @@ class LocalStorageDataSource {
     _queueBox = await Hive.openBox<Map>(_queueBoxName);
     _cacheBox = await Hive.openBox<Map>(_cacheBoxName);
     _metadataBox = await Hive.openBox(_metadataBoxName);
+    _retryMetadataBox = await Hive.openBox<Map>(_retryMetadataBoxName);
   }
   
   /// Queue a transaction for later sync to Firestore
@@ -157,6 +160,33 @@ class LocalStorageDataSource {
     await _cacheBox!.clear();
     await _metadataBox!.delete('last_cache_update');
   }
+
+  /// Update the syncedToFirestore flag for a transaction
+  /// 
+  /// This updates the transaction in the cache box to mark it as synced.
+  /// Requirements: 1.5
+  Future<void> updateSyncedFlag(String transactionId, bool synced) async {
+    _ensureInitialized();
+    
+    final json = _cacheBox!.get(transactionId);
+    if (json != null) {
+      final jsonMap = Map<String, dynamic>.from(json);
+      jsonMap['syncedToFirestore'] = synced;
+      await _cacheBox!.put(transactionId, jsonMap);
+    }
+  }
+
+  /// Get a single transaction by ID from the cache
+  Future<Transaction?> getTransaction(String transactionId) async {
+    _ensureInitialized();
+    
+    final json = _cacheBox!.get(transactionId);
+    if (json != null) {
+      final jsonMap = Map<String, dynamic>.from(json);
+      return Transaction.fromJson(jsonMap);
+    }
+    return null;
+  }
   
   /// Save a transaction to local storage
   Future<void> saveTransaction(Transaction transaction) async {
@@ -214,11 +244,105 @@ class LocalStorageDataSource {
     await _queueBox?.close();
     await _cacheBox?.close();
     await _metadataBox?.close();
+    await _retryMetadataBox?.close();
+  }
+
+  // ============================================================
+  // Retry Metadata Methods (Requirements: 6.1, 6.2, 6.3)
+  // ============================================================
+
+  /// Get retry metadata for a transaction
+  /// Returns a map with retryCount, lastAttemptAt, lastError, and permanentlyFailed
+  Future<Map<String, dynamic>> getRetryMetadata(String transactionId) async {
+    _ensureInitialized();
+    
+    final metadata = _retryMetadataBox!.get(transactionId);
+    if (metadata != null) {
+      return Map<String, dynamic>.from(metadata);
+    }
+    return {
+      'retryCount': 0,
+      'lastAttemptAt': null,
+      'lastError': null,
+      'permanentlyFailed': false,
+    };
+  }
+
+  /// Increment retry count for a transaction
+  /// Returns the new retry count
+  Future<int> incrementRetryCount(String transactionId, String? errorMessage) async {
+    _ensureInitialized();
+    
+    final metadata = await getRetryMetadata(transactionId);
+    final newRetryCount = (metadata['retryCount'] as int) + 1;
+    
+    await _retryMetadataBox!.put(transactionId, {
+      'retryCount': newRetryCount,
+      'lastAttemptAt': DateTime.now().millisecondsSinceEpoch,
+      'lastError': errorMessage,
+      'permanentlyFailed': metadata['permanentlyFailed'] ?? false,
+    });
+    
+    return newRetryCount;
+  }
+
+  /// Mark a transaction as permanently failed
+  Future<void> markAsPermanentlyFailed(String transactionId, String errorMessage) async {
+    _ensureInitialized();
+    
+    final metadata = await getRetryMetadata(transactionId);
+    
+    await _retryMetadataBox!.put(transactionId, {
+      'retryCount': metadata['retryCount'],
+      'lastAttemptAt': DateTime.now().millisecondsSinceEpoch,
+      'lastError': errorMessage,
+      'permanentlyFailed': true,
+    });
+  }
+
+  /// Check if a transaction is permanently failed
+  Future<bool> isPermanentlyFailed(String transactionId) async {
+    _ensureInitialized();
+    
+    final metadata = await getRetryMetadata(transactionId);
+    return metadata['permanentlyFailed'] == true;
+  }
+
+  /// Get the retry count for a transaction
+  Future<int> getRetryCount(String transactionId) async {
+    _ensureInitialized();
+    
+    final metadata = await getRetryMetadata(transactionId);
+    return metadata['retryCount'] as int;
+  }
+
+  /// Clear retry metadata for a transaction (called on successful sync)
+  Future<void> clearRetryMetadata(String transactionId) async {
+    _ensureInitialized();
+    
+    await _retryMetadataBox!.delete(transactionId);
+  }
+
+  /// Get all transactions that are not permanently failed
+  Future<List<Transaction>> getRetryableQueuedTransactions() async {
+    _ensureInitialized();
+    
+    final allTransactions = await getQueuedTransactions();
+    final retryableTransactions = <Transaction>[];
+    
+    for (final transaction in allTransactions) {
+      final isPermanentFailed = await isPermanentlyFailed(transaction.id);
+      if (!isPermanentFailed) {
+        retryableTransactions.add(transaction);
+      }
+    }
+    
+    return retryableTransactions;
   }
   
   /// Ensure Hive is initialized before operations
   void _ensureInitialized() {
-    if (_queueBox == null || _cacheBox == null || _metadataBox == null) {
+    if (_queueBox == null || _cacheBox == null || _metadataBox == null || _retryMetadataBox == null) {
       throw StateError(
         'LocalStorageDataSource not initialized. Call initialize() first.',
       );

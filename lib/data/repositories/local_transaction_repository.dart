@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 
+import '../../core/services/cloud_sync_service.dart';
 import '../../domain/entities/transaction.dart';
 import '../../domain/repositories/transaction_repository.dart';
 import '../datasources/local_storage_datasource.dart';
@@ -9,14 +10,29 @@ import '../datasources/local_storage_datasource.dart';
 /// This repository provides the same interface as the Firebase repository
 /// but stores all data locally using Hive. Perfect for offline-first usage
 /// or when Firebase is not configured.
+/// 
+/// When a CloudSyncService is provided, transactions are automatically
+/// queued for cloud sync after being saved locally.
 class LocalTransactionRepository implements TransactionRepository {
   final LocalStorageDataSource localStorage;
   final Uuid uuid;
+  
+  /// Optional CloudSyncService for queueing transactions for cloud sync
+  /// Requirements: 1.1, 2.1
+  CloudSyncService? _cloudSyncService;
 
   LocalTransactionRepository({
     required this.localStorage,
     required this.uuid,
   });
+
+  /// Set the CloudSyncService for cloud sync integration
+  /// 
+  /// This is set after initialization to avoid circular dependencies.
+  /// Requirements: 1.1, 2.1
+  void setCloudSyncService(CloudSyncService cloudSyncService) {
+    _cloudSyncService = cloudSyncService;
+  }
 
   @override
   Future<String> saveTransaction(Transaction transaction) async {
@@ -29,11 +45,12 @@ class LocalTransactionRepository implements TransactionRepository {
       print('🔵 [LocalTransactionRepository] Generated/using ID: $transactionId');
       
       // Create transaction with correct constructor
+      // Requirements: 1.1, 2.1 - Ensure syncedToFirestore = false for new transactions
       final transactionWithId = Transaction(
         id: transactionId,
         userId: transaction.userId,
         createdAt: transaction.createdAt,
-        syncedToFirestore: false, // Local only, not synced
+        syncedToFirestore: false, // Local only, not synced - Requirements: 1.1, 2.1
         duplicateCheckHash: transaction.duplicateCheckHash,
         isManualEntry: transaction.isManualEntry,
         amount: transaction.amount,
@@ -55,6 +72,16 @@ class LocalTransactionRepository implements TransactionRepository {
       // Also queue for potential future sync (if needed)
       await localStorage.queueTransaction(transactionWithId);
       print('✅ [LocalTransactionRepository] Saved to queue successfully');
+      
+      // Queue for cloud sync if CloudSyncService is available
+      // Requirements: 1.1 - Queue transaction for cloud upload after local save
+      if (_cloudSyncService != null) {
+        print('🔵 [LocalTransactionRepository] Queueing for cloud sync...');
+        await _cloudSyncService!.queueForSync(transactionWithId);
+        print('✅ [LocalTransactionRepository] Queued for cloud sync successfully');
+      } else {
+        print('⚠️ [LocalTransactionRepository] CloudSyncService not available, skipping cloud sync queue');
+      }
       
       // Verify the transaction was saved by reading it back
       final savedTransactions = await localStorage.getCachedTransactions();

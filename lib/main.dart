@@ -7,8 +7,10 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'core/services/service_locator.dart';
 import 'core/routes/app_routes.dart';
 import 'core/services/background_sms_service.dart';
+import 'core/services/cloud_sync_service.dart';
 import 'presentation/bloc/sms_bloc.dart';
 import 'presentation/bloc/transaction_bloc.dart';
+import 'presentation/bloc/sync_bloc.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -104,14 +106,59 @@ Future<void> _startBackgroundMonitoring() async {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final bool servicesInitialized;
   
   const MyApp({super.key, required this.servicesInitialized});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    // Register as lifecycle observer to trigger sync on app resume
+    // Requirements: 1.3
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    // Trigger sync when app resumes from background
+    // Requirements: 1.3
+    if (state == AppLifecycleState.resumed && widget.servicesInitialized) {
+      debugPrint('🔄 App resumed from background - triggering sync');
+      _triggerSyncOnResume();
+    }
+  }
+
+  /// Trigger sync when app resumes from background
+  /// 
+  /// Requirements: 1.3
+  Future<void> _triggerSyncOnResume() async {
+    try {
+      if (serviceLocator.isRegistered<CloudSyncService>()) {
+        final cloudSyncService = serviceLocator.get<CloudSyncService>();
+        await cloudSyncService.onAppResume();
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to trigger sync on resume: $e');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (!servicesInitialized) {
+    if (!widget.servicesInitialized) {
       // Fallback to simple app if services failed to initialize
       return MaterialApp(
         title: 'PayLog',
@@ -152,6 +199,24 @@ class MyApp extends StatelessWidget {
       debugPrint('⚠️ SMS functionality will be limited');
     }
 
+    // Try to create Sync BLoC (for cloud sync status)
+    try {
+      providers.add(
+        BlocProvider<SyncBloc>(
+          create: (context) {
+            final bloc = serviceLocator.createSyncBloc();
+            // Start sync monitoring immediately
+            bloc.add(SyncStarted());
+            return bloc;
+          },
+        ),
+      );
+      debugPrint('✅ SyncBloc created successfully');
+    } catch (e) {
+      debugPrint('⚠️ Failed to create SyncBloc: $e');
+      debugPrint('⚠️ Cloud sync functionality will be limited');
+    }
+
     return MultiBlocProvider(
       providers: providers,
       child: MaterialApp(
@@ -185,7 +250,7 @@ class ServiceErrorPage extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
+              const Icon(
                 Icons.warning_amber_rounded,
                 size: 64,
                 color: Colors.orange,

@@ -1,0 +1,291 @@
+# Implementation Plan: Cloud Transaction Sync
+
+## Overview
+
+This implementation plan breaks down the cloud transaction sync feature into discrete, incremental tasks. Each task builds on previous work and references specific requirements and correctness properties from the design document. The implementation follows the documented sync state machine and uses Dart/Flutter with Firebase.
+
+## Tasks
+
+- [x] 1. Set up project structure and utilities
+  - [x] 1.1 Create transaction hash utility
+    - Create `lib/core/utils/transaction_hash.dart`
+    - Implement `computeTransactionHash()` with field normalization (amount to 2 decimals, ISO dates, trimmed SMS)
+    - Use `crypto` package for SHA-256 hashing
+    - _Requirements: 7.1, 7.6_
+  - [ ]* 1.2 Write property test for hash computation
+    - **Property 18: Deterministic Hash Computation**
+    - Verify same inputs always produce same hash
+    - Verify different inputs produce different hashes
+    - **Validates: Requirements 7.6**
+
+- [x] 2. Implement AuthService for Firebase Anonymous Authentication
+  - [x] 2.1 Create AuthService class
+    - Create `lib/core/services/auth_service.dart`
+    - Implement `initialize()` to create/restore anonymous session
+    - Implement `currentUid` getter
+    - Implement `isAuthenticated` check
+    - Implement `authStateChanges` stream
+    - Handle auth failures with local-only fallback
+    - _Requirements: 8.1, 8.2, 8.3, 8.6_
+  - [ ]* 2.2 Write property test for UID persistence
+    - **Property 19: UID Persistence**
+    - Verify UID remains same across simulated restarts
+    - **Validates: Requirements 8.2**
+  - [ ]* 2.3 Write unit test for auth failure fallback
+    - Test local-only mode activation on auth failure
+    - **Validates: Requirements 8.6**
+
+- [x] 3. Implement ConnectivityMonitor
+  - [x] 3.1 Create ConnectivityMonitor class
+    - Create `lib/core/services/connectivity_monitor.dart`
+    - Wrap `connectivity_plus` package
+    - Implement `connectivityStream` for state changes
+    - Implement `currentState` and `isOnline` getters
+    - Distinguish between WiFi, mobile, ethernet, offline
+    - _Requirements: 5.1, 5.4_
+  - [ ]* 3.2 Write unit test for connectivity state detection
+    - Test state change stream emissions
+    - Test offline/online detection
+    - **Validates: Requirements 5.1**
+
+- [x] 4. Checkpoint - Core utilities complete
+  - Ensure hash utility and services compile without errors
+  - Verify AuthService initializes correctly
+  - Verify ConnectivityMonitor detects network state
+
+- [x] 5. Implement CloudSyncService core engine
+  - [x] 5.1 Create CloudSyncService class with state machine
+    - Create `lib/core/services/cloud_sync_service.dart`
+    - Implement sync state enum and transitions per design state machine
+    - Implement `_validateStateTransition()` to prevent invalid transitions
+    - Implement `statusStream` for UI updates
+    - _Requirements: 1.1, 1.4, 4.3_
+  - [x] 5.2 Implement queue management methods
+    - Implement `queueForSync()` with deduplication check
+    - Implement `getPendingCount()`
+    - Ensure queue persists across restarts (uses existing Hive queue)
+    - _Requirements: 2.1, 2.3, 2.4_
+  - [ ]* 5.3 Write property test for queue deduplication
+    - **Property 7: Queue Deduplication (Idempotence)**
+    - Verify queueing same transaction multiple times results in one entry
+    - **Validates: Requirements 2.4**
+  - [x] 5.4 Implement sync trigger logic
+    - Implement `triggerSync()` with online/not-syncing guards
+    - Implement `manualSync()` for user-triggered sync
+    - Subscribe to connectivity changes for auto-trigger
+    - _Requirements: 1.2, 1.3, 1.4, 4.1_
+  - [ ]* 5.5 Write property test for no concurrent syncs
+    - **Property 9: No Concurrent Syncs**
+    - Verify sync request while syncing is rejected
+    - **Validates: Requirements 4.3**
+
+- [x] 6. Implement sync processing logic
+  - [x] 6.1 Implement transaction upload to Firestore
+    - Use transaction hash as document ID
+    - Use path `/users/{uid}/transactions/{hash}`
+    - Use `set(..., SetOptions(merge: true))` for upserts
+    - Include all transaction fields
+    - _Requirements: 7.1, 7.2, 7.3, 7.4_
+  - [ ]* 6.2 Write property test for hash as document ID
+    - **Property 14: Hash as Document ID**
+    - Verify document ID equals computed hash
+    - Verify path format is correct
+    - **Validates: Requirements 7.1, 7.2**
+  - [ ]* 6.3 Write property test for field preservation
+    - **Property 16: All Fields Preserved (Round-Trip)**
+    - Verify all fields present after upload
+    - **Validates: Requirements 7.4**
+  - [x] 6.4 Implement chronological processing order
+    - Sort queued transactions by `createdAt` ascending
+    - Process oldest first
+    - _Requirements: 1.7_
+  - [ ]* 6.5 Write property test for chronological order
+    - **Property 5: Chronological Upload Order**
+    - Verify transactions processed oldest first
+    - **Validates: Requirements 1.7**
+  - [x] 6.6 Implement successful upload handling
+    - Update local `syncedToFirestore` flag to true
+    - Remove transaction from offline queue
+    - _Requirements: 1.5_
+  - [ ]* 6.7 Write property test for successful upload flag update
+    - **Property 3: Successful Upload Updates Flag**
+    - Verify flag updated and removed from queue on success
+    - **Validates: Requirements 1.5**
+
+- [x] 7. Checkpoint - Core sync engine complete
+  - Ensure CloudSyncService compiles without errors
+  - Verify state machine transitions work correctly
+  - Test manual sync with mock Firestore
+
+- [x] 8. Implement error handling and retry logic
+  - [x] 8.1 Implement exponential backoff retry
+    - Calculate backoff: `min(2^retryCount, 32)` seconds with jitter
+    - Increment retry count on retryable errors
+    - Keep transaction in queue on failure
+    - _Requirements: 6.1, 1.6_
+  - [ ]* 8.2 Write property test for exponential backoff
+    - **Property 11: Exponential Backoff on Retry**
+    - Verify delay increases exponentially
+    - **Validates: Requirements 6.1**
+  - [x] 8.3 Implement max retry limit
+    - Limit retries to 5 per transaction
+    - Mark as permanently failed when limit reached
+    - _Requirements: 6.2, 6.3_
+  - [ ]* 8.4 Write property test for max retry limit
+    - **Property 12: Max Retry Limit**
+    - Verify retry count never exceeds 5
+    - Verify transaction marked failed at limit
+    - **Validates: Requirements 6.2, 6.3**
+  - [x] 8.5 Implement permission error handling
+    - No retry on permission denied
+    - Transition to error state
+    - Notify user of auth issues
+    - _Requirements: 6.4_
+  - [ ]* 8.6 Write property test for no retry on permission error
+    - **Property 13: No Retry on Permission Error**
+    - Verify no retry attempt on permission denied
+    - **Validates: Requirements 6.4**
+  - [x] 8.7 Implement quota exceeded handling
+    - Hard pause sync (transition to error state)
+    - Resume only on manual trigger or app resume
+    - _Requirements: 6.1 (quota handling)_
+  - [x] 8.8 Implement connectivity loss handling
+    - Pause sync on connectivity loss
+    - Resume from next unprocessed transaction on reconnect
+    - _Requirements: 5.3_
+  - [ ]* 8.9 Write property test for graceful pause
+    - **Property 10: Graceful Pause on Connectivity Loss**
+    - Verify sync pauses and resumes correctly
+    - **Validates: Requirements 5.3**
+
+- [x] 9. Implement transaction validation
+  - [x] 9.1 Create transaction validator
+    - Validate required fields: amount, date, time, smsContent, senderPhoneNumber
+    - Validate amount is positive
+    - Validate date/time formats
+    - _Requirements: 7.5_
+  - [ ]* 9.2 Write property test for validation before upload
+    - **Property 17: Transaction Validation Before Upload**
+    - Verify validation occurs before upload attempt
+    - **Validates: Requirements 7.5**
+
+- [x] 10. Checkpoint - Error handling complete
+  - Ensure all error scenarios handled correctly
+  - Verify retry logic works as designed
+  - Test connectivity loss/restore scenarios
+
+- [x] 11. Integrate with existing repository layer
+  - [x] 11.1 Update LocalTransactionRepository
+    - Add call to `CloudSyncService.queueForSync()` after saving transaction
+    - Ensure transactions queued with `syncedToFirestore = false`
+    - _Requirements: 1.1, 2.1_
+  - [ ]* 11.2 Write property test for queue on save
+    - **Property 1: Queue on Save**
+    - Verify saved transaction appears in queue
+    - **Validates: Requirements 1.1**
+  - [x] 11.3 Update TransactionRepositoryImpl
+    - Use transaction hash as document ID instead of UUID
+    - Use `set(..., SetOptions(merge: true))` for all writes
+    - Ensure userId matches auth UID
+    - _Requirements: 7.1, 7.2, 7.3, 8.3_
+  - [ ]* 11.4 Write property test for auth UID as userId
+    - **Property 20: Auth UID as UserId**
+    - Verify userId equals auth UID on upload
+    - **Validates: Requirements 8.3**
+
+- [x] 12. Implement SyncBloc for UI state management
+  - [x] 12.1 Create SyncBloc
+    - Create `lib/presentation/bloc/sync_bloc.dart`
+    - Define events: SyncStarted, SyncRequested, SyncStatusChanged, ConnectivityChanged
+    - Define states: SyncInitial, SyncInProgress, SyncComplete, SyncPending, SyncError, SyncOffline
+    - Subscribe to CloudSyncService status stream
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
+  - [ ]* 12.2 Write unit tests for SyncBloc state transitions
+    - Test all state transitions
+    - Test event handling
+    - **Validates: Requirements 3.1-3.4**
+
+- [x] 13. Implement UI sync indicators
+  - [x] 13.1 Create SyncStatusWidget
+    - Create `lib/presentation/widgets/sync_status_widget.dart`
+    - Show sync icon with status (syncing spinner, checkmark, warning)
+    - Show pending count badge when transactions pending
+    - Show "All synced" when complete
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
+  - [x] 13.2 Add manual sync button to dashboard
+    - Add refresh/sync button to app bar or FAB
+    - Trigger `SyncRequested` event on tap
+    - Show result snackbar (success count, failure count)
+    - Disable button while sync in progress
+    - _Requirements: 4.1, 4.2, 4.3_
+  - [x] 13.3 Update transaction list item
+    - Add sync status indicator (cloud icon with checkmark/pending)
+    - Show synced vs pending state per transaction
+    - _Requirements: 2.5, 3.1_
+
+- [x] 14. Checkpoint - UI integration complete
+  - Ensure sync status displays correctly
+  - Test manual sync button functionality
+  - Verify transaction sync indicators update
+
+- [x] 15. Wire up app lifecycle and initialization
+  - [x] 15.1 Update service locator
+    - Register AuthService, ConnectivityMonitor, CloudSyncService
+    - Ensure proper initialization order (Auth → Connectivity → Sync)
+    - _Requirements: 8.1_
+  - [x] 15.2 Update main.dart initialization
+    - Initialize AuthService before other services
+    - Start CloudSyncService monitoring
+    - Trigger initial sync on app start
+    - _Requirements: 1.2, 8.1_
+  - [x] 15.3 Add app lifecycle observer
+    - Implement WidgetsBindingObserver
+    - Trigger sync on app resume from background
+    - _Requirements: 1.3_
+  - [ ]* 15.4 Write integration test for app lifecycle sync triggers
+    - Test sync triggers on startup
+    - Test sync triggers on resume
+    - **Validates: Requirements 1.2, 1.3**
+
+- [x] 16. Update Firestore security rules
+  - [x] 16.1 Deploy security rules
+    - Update `firestore.rules` with UID-scoped access
+    - Test rules allow owner access only
+    - _Requirements: 8.4_
+
+- [x] 17. Final checkpoint - Full integration
+  - Ensure all components work together
+  - Test complete sync flow end-to-end
+  - Verify offline queue persists and syncs on reconnect
+
+- [ ] 18. Write integration tests
+  - [ ]* 18.1 Write integration test for complete sync flow
+    - Test: save transaction → queue → sync → verify in Firestore
+    - Test: offline save → reconnect → auto sync
+    - **Validates: Requirements 1.1-1.8, 2.1-2.4**
+  - [ ]* 18.2 Write integration test for manual sync with results
+    - **Property 8: Manual Sync Processes All**
+    - Test manual sync processes all queued transactions
+    - Verify result contains accurate counts
+    - **Validates: Requirements 4.1, 4.2**
+  - [ ]* 18.3 Write property test for connectivity triggers sync
+    - **Property 2: Connectivity Triggers Sync**
+    - Verify offline→online triggers sync
+    - **Validates: Requirements 1.4, 5.2**
+  - [ ]* 18.4 Write property test for upsert behavior
+    - **Property 15: Upsert on Duplicate Hash**
+    - Verify duplicate hash updates existing document
+    - **Validates: Requirements 7.3**
+  - [ ]* 18.5 Write property test for local-only fallback
+    - **Property 21: Local-Only Fallback**
+    - Verify system operates locally on auth failure
+    - **Validates: Requirements 8.6**
+
+## Notes
+
+- Tasks marked with `*` are optional test tasks that can be skipped for faster MVP
+- Each task references specific requirements for traceability
+- Property tests validate universal correctness properties from the design document
+- Checkpoints ensure incremental validation before proceeding
+- Implementation must strictly follow the documented sync state machine transitions
+- All Firestore writes must use `set(..., SetOptions(merge: true))` for upsert behavior

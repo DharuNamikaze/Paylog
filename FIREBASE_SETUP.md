@@ -34,18 +34,54 @@
 4. Select a location for your database
 5. Click "Done"
 
-### 5. Set up Firestore Security Rules (Optional)
+### 5. Set up Firestore Security Rules
+
+The project includes a `firestore.rules` file with UID-scoped access control. These rules ensure:
+- Users can only read/write their own transactions
+- Anonymous authentication UID is used to scope data access
+- All other access is denied by default
+
+**Option A: Deploy via Firebase CLI**
+```bash
+# Install Firebase CLI if not already installed
+npm install -g firebase-tools
+
+# Login to Firebase
+firebase login
+
+# Initialize Firebase in the project (if not done)
+firebase init firestore
+
+# Deploy security rules
+firebase deploy --only firestore:rules
+```
+
+**Option B: Deploy via Firebase Console**
+1. Go to Firebase Console > Firestore Database > Rules
+2. Copy the contents of `firestore.rules`:
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow users to read/write their own transactions
-    match /users/{userId}/transactions/{document} {
+    // User transactions - UID-scoped access
+    // Only the owning user can read/write their own transactions
+    match /users/{userId}/transactions/{transactionId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Deny all other access by default
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
 ```
+3. Click "Publish"
+
+**Testing the Rules**
+- Verify that authenticated users can only access `/users/{their-uid}/transactions/*`
+- Verify that unauthenticated requests are denied
+- Verify that users cannot access other users' transactions
 
 ### 6. Test the Setup
 1. Run `flutter pub get` to install dependencies

@@ -4,6 +4,8 @@ import '../../domain/entities/transaction.dart';
 import '../../domain/entities/transaction_type.dart';
 import '../bloc/transaction_bloc.dart';
 import '../bloc/sms_bloc.dart';
+import '../bloc/sync_bloc.dart';
+import '../widgets/sync_status_widget.dart';
 import '../../core/routes/app_routes.dart';
 import 'settings_page.dart';
 
@@ -31,7 +33,212 @@ class _DashboardPageState extends State<DashboardPage> {
     // Auto-start SMS monitoring
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoStartSmsMonitoring();
+      _initializeSyncBloc();
     });
+  }
+  
+  /// Initialize SyncBloc and start monitoring
+  void _initializeSyncBloc() {
+    try {
+      final syncBloc = context.read<SyncBloc>();
+      syncBloc.add(SyncStarted());
+    } catch (e) {
+      // SyncBloc not available - this is fine, sync functionality is optional
+      debugPrint('Sync service not available: $e');
+    }
+  }
+
+  /// Build sync button with status indicator for app bar
+  /// 
+  /// Requirements: 4.1, 4.2, 4.3
+  Widget _buildSyncButton() {
+    try {
+      return BlocConsumer<SyncBloc, SyncBlocState>(
+        listener: (context, state) {
+          // Show snackbar when sync completes (Requirements: 4.2)
+          if (state is SyncComplete) {
+            _showSyncResultSnackbar(
+              successCount: state.syncedCount,
+              failureCount: 0,
+            );
+          } else if (state is SyncError) {
+            _showSyncResultSnackbar(
+              successCount: 0,
+              failureCount: state.failedCount,
+              errorMessage: state.message,
+            );
+          }
+        },
+        builder: (context, state) {
+          final isSyncing = state is SyncInProgress;
+          final isOffline = state is SyncOffline;
+          
+          return IconButton(
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                if (isSyncing)
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                else
+                  Icon(
+                    _getSyncIcon(state),
+                    color: _getSyncIconColor(state),
+                  ),
+                // Pending count badge
+                if (state.pendingCount > 0 && !isSyncing)
+                  Positioned(
+                    right: -6,
+                    top: -6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.orange,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        state.pendingCount > 9 ? '9+' : state.pendingCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            // Disable button while syncing (Requirements: 4.3)
+            onPressed: (isSyncing || isOffline) ? null : () {
+              _triggerManualSync();
+            },
+            tooltip: _getSyncTooltip(state),
+          );
+        },
+      );
+    } catch (e) {
+      // SyncBloc not available
+      return const SizedBox.shrink();
+    }
+  }
+
+  /// Get sync icon based on state
+  IconData _getSyncIcon(SyncBlocState state) {
+    if (state is SyncComplete) {
+      return Icons.cloud_done;
+    } else if (state is SyncPending) {
+      return Icons.cloud_upload_outlined;
+    } else if (state is SyncError) {
+      return Icons.cloud_off;
+    } else if (state is SyncOffline) {
+      return Icons.cloud_off_outlined;
+    }
+    return Icons.cloud_outlined;
+  }
+
+  /// Get sync icon color based on state
+  Color _getSyncIconColor(SyncBlocState state) {
+    if (state is SyncComplete) {
+      return Colors.green;
+    } else if (state is SyncPending) {
+      return Colors.orange;
+    } else if (state is SyncError) {
+      return Colors.red;
+    } else if (state is SyncOffline) {
+      return Colors.grey;
+    }
+    return Colors.white;
+  }
+
+  /// Get sync tooltip based on state
+  String _getSyncTooltip(SyncBlocState state) {
+    if (state is SyncInProgress) {
+      return 'Syncing...';
+    } else if (state is SyncComplete) {
+      return 'All synced';
+    } else if (state is SyncPending) {
+      return 'Tap to sync ${state.pendingCount} transaction${state.pendingCount == 1 ? '' : 's'}';
+    } else if (state is SyncError) {
+      return 'Sync error - tap to retry';
+    } else if (state is SyncOffline) {
+      return 'Offline - ${state.pendingCount} pending';
+    }
+    return 'Cloud sync';
+  }
+
+  /// Trigger manual sync
+  /// 
+  /// Requirements: 4.1
+  void _triggerManualSync() {
+    try {
+      context.read<SyncBloc>().add(SyncRequested());
+    } catch (e) {
+      debugPrint('Failed to trigger sync: $e');
+    }
+  }
+
+  /// Show snackbar with sync results
+  /// 
+  /// Requirements: 4.2
+  void _showSyncResultSnackbar({
+    required int successCount,
+    required int failureCount,
+    String? errorMessage,
+  }) {
+    final hasSuccess = successCount > 0;
+    final hasFailure = failureCount > 0 || errorMessage != null;
+    
+    String message;
+    Color backgroundColor;
+    IconData icon;
+    
+    if (hasSuccess && !hasFailure) {
+      message = 'Synced $successCount transaction${successCount == 1 ? '' : 's'}';
+      backgroundColor = Colors.green;
+      icon = Icons.cloud_done;
+    } else if (hasFailure && !hasSuccess) {
+      message = errorMessage ?? 'Failed to sync $failureCount transaction${failureCount == 1 ? '' : 's'}';
+      backgroundColor = Colors.red;
+      icon = Icons.cloud_off;
+    } else if (hasSuccess && hasFailure) {
+      message = 'Synced $successCount, failed $failureCount';
+      backgroundColor = Colors.orange;
+      icon = Icons.cloud_sync;
+    } else {
+      // No changes
+      return;
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: backgroundColor,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        action: hasFailure ? SnackBarAction(
+          label: 'Retry',
+          textColor: Colors.white,
+          onPressed: _triggerManualSync,
+        ) : null,
+      ),
+    );
   }
   
   /// Automatically start SMS monitoring if permissions are available
@@ -57,6 +264,8 @@ class _DashboardPageState extends State<DashboardPage> {
         title: const Text('PayLog'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          // Sync status indicator with manual sync button
+          _buildSyncButton(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -325,7 +534,7 @@ class _DashboardPageState extends State<DashboardPage> {
               children: [
                 Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.sms_failed,
                       color: Colors.orange,
                     ),
@@ -343,7 +552,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.info_outline,
                       size: 16,
                       color: Colors.orange,
@@ -789,21 +998,33 @@ class TransactionCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Manual entry indicator
-                  if (transaction.isManualEntry)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.secondary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
+                  // Manual entry indicator and sync status
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Sync status indicator (Requirements: 2.5, 3.1)
+                      TransactionSyncIndicator(
+                        isSynced: transaction.syncedToFirestore,
+                        size: 16,
                       ),
-                      child: Text(
-                        'Manual',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.secondary,
+                      if (transaction.isManualEntry) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.secondary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Manual',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.secondary,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 12),

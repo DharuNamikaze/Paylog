@@ -11,10 +11,10 @@ dependencies:
   flutter:
     sdk: flutter
   
-  # Firebase dependencies
-  firebase_core: ^2.24.2
-  cloud_firestore: ^4.13.6
-  firebase_auth: ^4.15.3
+  # Firebase dependencies (locked to compatible versions)
+  firebase_core: ^2.27.0
+  cloud_firestore: ^4.15.0
+  firebase_auth: ^4.17.0
   
   # Local storage
   hive: ^2.2.3
