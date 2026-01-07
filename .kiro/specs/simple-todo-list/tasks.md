@@ -87,7 +87,8 @@ This plan implements a simple todo list feature with a floating action button on
 - [x] 9. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ]* 10. Write widget tests for UI components
+- [ ] 10. Write widget tests for UI components
+
   - Test FAB stack layout on dashboard
   - Test navigation to todo page
   - Test empty state display
